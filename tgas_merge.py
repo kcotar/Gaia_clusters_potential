@@ -10,4 +10,10 @@ for i_t in range(0, 16):
     tgas_all.append(data)
 
 tgas_all = vstack(tgas_all)
+
+# remove any units description in data
+for col in tgas_all.colnames:
+    tgas_all[col].unit=None
+
+tgas_all['rv'] = 0  # temporary for test purposes - Gaia DR1
 tgas_all.write(data_dir+'TgasSource_all.fits', overwrite=True)

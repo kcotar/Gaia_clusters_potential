@@ -9,6 +9,13 @@ __pycache__/
 # Pycharm
 .idea
 
+# Files
+*.txt
+*.csv
+*.png
+*.jpg
+*.fits
+
 # Distribution / packaging
 .Python
 env/
