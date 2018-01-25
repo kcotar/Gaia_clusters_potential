@@ -4,7 +4,7 @@ import astropy.units as un
 import astropy.constants as const
 import matplotlib.pyplot as plt
 from copy import deepcopy
-# import gala.coordinates as gal_coord
+from galpy.potential import MWPotential2014, evaluatePotentials
 
 
 def _add_galactic_cartesian_data(input_data):
@@ -120,6 +120,8 @@ class CLUSTER:
         # other - mass particle variables
         self.particle = None
         self.particle_pos = None
+        self.cluster_memb_pos = None
+        self.background_memb_pos = None
 
     def init_members(self, members_data):
         """
@@ -212,9 +214,17 @@ class CLUSTER:
         :return:
         """
         fig, ax = plt.subplots(2, 2)
+        # background members
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
+        # cluster members
         ax = _add_xyz_points(ax, self.members, c='blue', s=3, compute_limits=True)
+        if self.cluster_memb_pos is not None:
+            for i_m in range(len(self.members)):
+                ax[0, 0].plot(self.cluster_memb_pos[:, i_m, 0], self.cluster_memb_pos[:, i_m, 1], lw=0.5, c='red', alpha=0.3)
+                ax[0, 1].plot(self.cluster_memb_pos[:, i_m, 2], self.cluster_memb_pos[:, i_m, 1], lw=0.5, c='red', alpha=0.3)
+                ax[1, 0].plot(self.cluster_memb_pos[:, i_m, 0], self.cluster_memb_pos[:, i_m, 2], lw=0.5, c='red', alpha=0.3)
+        # investigated particle movement
         ax[0, 0].plot(self.particle_pos[:, 0], self.particle_pos[:, 1], lw=1, c='red')
         ax[0, 1].plot(self.particle_pos[:, 2], self.particle_pos[:, 1], lw=1, c='red')
         ax[1, 0].plot(self.particle_pos[:, 0], self.particle_pos[:, 2], lw=1, c='red')
@@ -229,7 +239,7 @@ class CLUSTER:
     def init_test_particle(self, input_data):
         self.particle = _add_galactic_cartesian_data(input_data)
 
-    def integrate_stars(self, years=1, step_years=1.,
+    def _integrate_stars(self, years=1, step_years=1.,
                         include_background=False, compute_g=False, store_hist=False):
         """
 
@@ -250,6 +260,8 @@ class CLUSTER:
                 g_clust = self._potential_at_coordinates(pos_init)
                 vel_new = vel_init + g_clust * step_years
                 vel_init = np.array(vel_new)
+            if store_hist:
+                self.cluster_memb_pos.append(pos_init)
         # write results back
         _data_stack_write_back(self.members, ['x', 'y', 'z'], pos_init)
         if compute_g:
@@ -270,6 +282,7 @@ class CLUSTER:
         obs_year = np.arange(0, years, step_years)
         if store_hist:
             self.particle_pos = np.zeros((len(obs_year), 3))
+            self.cluster_memb_pos = list([])
         print 'Integrating orbit'
         for i_y in range(len(obs_year)):
             if i_y % 100 == 0:
@@ -285,5 +298,9 @@ class CLUSTER:
             # correct positions of stars in cluster and in background
             if integrate_stars_pos:
                 # integrate for one time step
-                self.integrate_stars(years=step_years, step_years=step_years,
-                                     include_background=False, compute_g=integrate_stars_vel, store_hist=False)
+                self._integrate_stars(years=step_years, step_years=step_years,
+                                     include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist)
+        if store_hist:
+            # stack computed coordinates along new axis
+            self.cluster_memb_pos = np.stack(self.cluster_memb_pos)
+
