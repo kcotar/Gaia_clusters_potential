@@ -21,7 +21,7 @@ iso = ISOCHRONES(data_dir+'isochrones/padova/isochrones_all.fits')
 selected_clusters = ['Alessi_13', 'ASCC_18', 'ASCC_20', 'Blanco_1', 'Collinder_65', 'Collinder_70', 'Melotte_20',
                      'Melotte_22', 'NGC_1039', 'NGC_2168', 'Platais_3', 'Platais_5', 'Stock_2']
 # iterate over preselected clusters
-for obs_cluster in selected_clusters:
+for obs_cluster in ['Melotte_22']:  #selected_clusters:
     print 'Working on:', obs_cluster
 
     if not os.path.isdir(obs_cluster):
@@ -32,7 +32,7 @@ for obs_cluster in selected_clusters:
     clust_center = coord.ICRS(ra=clust_data['RAdeg'] * un.deg,
                               dec=clust_data['DEdeg'] * un.deg)
     # define possible cluster stars
-    idx_possible_r1 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
+    idx_possible_r1 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * un.deg
     gaia_cluster_sub = gaia_data[idx_possible_r1]
     print np.sum(idx_possible_r1)
     # kinematics selection
@@ -46,7 +46,7 @@ for obs_cluster in selected_clusters:
         continue
 
 
-    # galpy potential implementation only
+    # galpy potential implementation onlys
     for clust_star in gaia_cluster_sub[idx_members]:
 
         orbit = Orbit(vxvv=[clust_star['ra'] * un.deg,
@@ -55,13 +55,17 @@ for obs_cluster in selected_clusters:
                             clust_star['pmra'] * un.mas / un.yr,
                             clust_star['pmdec'] * un.mas / un.yr,
                             clust_star['rv'] * un.km / un.s], radec=True)
-        # orbit.turn_physical_off()
+        orbit.turn_physical_on()
 
-        ts = np.linspace(0, -150., 100) * un.Myr
+        ts = np.linspace(0, 250., 2000) * un.Myr
         orbit.integrate(ts, MWPotential2014)
-        plt.plot(orbit.x(ts), orbit.y(ts))
-    plt.savefig('galpy_orbits.png', dpi=350)
+        plt.plot(orbit.x(ts), orbit.y(ts), lw=0.5, c='red', alpha=0.3)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.grid(ls='--', alpha=0.5, color='black')
+    plt.savefig('orbits_galpy.png', dpi=400)
     plt.close()
+
 
     # my implementation of cluster class with only gravitational potential
     # create and use cluster class
@@ -73,13 +77,14 @@ for obs_cluster in selected_clusters:
 
     print ' PM:', clust_data['pmRAc'], clust_data['pmDEc']
     test_star = gaia_cluster_sub[~idx_members][7:8]
+    # test_star = gaia_cluster_sub[idx_members][-2:-1]
     test_star['pmra'] = clust_data['pmRAc']
     test_star['pmdec'] = clust_data['pmDEc']
     test_star['rv'] = 0
     cluster_class.init_test_particle(test_star)
-    cluster_class.integrate_particle(-150e6, step_years=-10e5,
+    cluster_class.integrate_particle(250e6, step_years=1e4, include_galaxy_pot=True,
                                      integrate_stars_pos=True, integrate_stars_vel=True)
-    cluster_class.plot_cluster_xyz_movement(path='stanje_p150M.png')
+    cluster_class.plot_cluster_xyz_movement(path='orbits_integration.png')
 
     os.chdir('..')
 
