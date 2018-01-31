@@ -3,8 +3,12 @@ import astropy.coordinates as coord
 import astropy.units as un
 import astropy.constants as const
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from mpl_toolkits.mplot3d import Axes3D
 from copy import deepcopy
 from galpy.potential import MWPotential2014, evaluatePotentials
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from shapely.geometry import Point, MultiPoint
 
 
 def _add_galactic_cartesian_data(input_data):
@@ -143,6 +147,29 @@ def _get_gravity_accel(x, y, z, galpy_pot=False):
     dpot_dr = dpot / (2.*dr_gal*1e3)  # dr_gal converted to pc as dpot is returned in pc2/yr2
     return -1.*dpot_dr  # pc/yr2
 
+
+def _integrate_pos_vel(pos, vel, g, t, method='newt'):
+    # TODO: add more sophisticated and faster methods to do this
+    if 'newt' in method:
+        pos_new = pos + vel * t
+        vel_new = vel + g * t
+    elif 'rk4' in method:
+        pass
+        # TODO: harder to implement in current setup of functions
+        # k1 = acceleration(R_init)
+        # k2 = acceleration(R_init + 0.5 * k1)
+        # k3 = acceleration(R_init + 0.5 * k2)
+        # k4 = acceleration(R_init + k3)
+        # # print k1, k2, k3, k4
+        # a_star = 1. / 6. * (k1 + 2. * k2 + 2. * k3 + k4)
+        # V_new = V_init + a_star * t_step_s
+        # R_new = R_init + V_init * t_step_s
+        # R_init = np.array(R_new)
+        # V_init = np.array(V_new)
+        # r_RK4_2[i_t] = size_vect(R_new) / AU
+    return pos_new, vel_new
+
+
 class CLUSTER:
     """
 
@@ -170,8 +197,14 @@ class CLUSTER:
         # other - mass particle variables
         self.particle = None
         self.particle_pos = None
+        # orbital positions of objects
         self.cluster_memb_pos = None
         self.background_memb_pos = None
+        # orbital crosses
+        self.final_inside_hull = None
+        # integration settings
+        self.step_years = None
+
 
     def init_members(self, members_data):
         """
@@ -227,8 +260,6 @@ class CLUSTER:
         if 'Mass' not in self.members.colnames:
             self.estimate_masses()
         mass_memb = _data_stack(self.members, ['Mass'])
-        # potenconversionsrion const
-        kms_to_pcyr = (un.km**2/un.s**2).to(un.pc**2/un.yr**2)
         # constant scaled to correct units used elsewhere in the code
         G_const = (const.G.to(un.pc ** 3 / (un.kg * un.yr ** 2)) * const.M_sun).value
         # determine vectors from members to the observed location
@@ -239,11 +270,7 @@ class CLUSTER:
             # compute gravitational potential
             g_vect = -1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb)**3)[idx_star_use], axis=0)
             if include_galaxy:
-                g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2])
-
-                # print g_pot
-                # g_pot = evaluatePotentials(MWPotential2014, np.sqrt(loc_vec[:, 0]**2 + loc_vec[:, 1]**2)*un.pc,
-                #                            loc_vec[:, 2]*un.pc) * kms_to_pcyr  # coordinates in parsecs
+                g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2], galpy_pot=False)
                 g_vect += (g_pot * loc_vec / _size_vect(loc_vec))[0]  # vector from center of Galaxy
         else:
             # TODO: faster implementation using array operations instead for loop
@@ -254,9 +281,7 @@ class CLUSTER:
                 g_vect_list.append(-1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb) ** 3)[idx_star_use], axis=0))
             g_vect = np.vstack(g_vect_list)
             if include_galaxy:
-                g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2])
-                # g_pot = evaluatePotentials(MWPotential2014, np.sqrt(loc_vec[:, 0] ** 2 + loc_vec[:, 1] ** 2)*un.pc,
-                #                            loc_vec[:, 2]*un.pc)  # coordinates in parsecs
+                g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2], galpy_pot=False)
                 g_pot = g_pot.repeat(3).reshape(loc_vec.shape[0], 3)
                 g_vect += (g_pot * loc_vec / _size_vect(loc_vec))  # vector from center of Galaxy
         return g_vect
@@ -266,12 +291,13 @@ class CLUSTER:
 
         :return:
         """
-        fig, ax = plt.subplots(2, 2)
+        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
         ax = _add_xyz_points(ax, self.members, c='blue', s=3, compute_limits=True)
         plt.suptitle('Cluster: ' + self.id)
         plt.tight_layout()
+        plt.subplots_adjust(left=0.03, bottom=0.03, right=0.98, top=0.96, wspace=0.15, hspace=0.1)
         plt.grid(ls='--', alpha=0.5, color='black')
         if path is None:
             plt.show()
@@ -279,12 +305,12 @@ class CLUSTER:
             plt.savefig(path, dpi=350)
         plt.close()
 
-    def plot_cluster_xyz_movement(self, path=None):
+    def plot_cluster_xyz_movement(self, idx_obj_only=None, path=None, source_id=None, sobject_id=None):
         """
 
         :return:
         """
-        fig, ax = plt.subplots(2, 2)
+        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
         # background members
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
@@ -296,20 +322,30 @@ class CLUSTER:
                 ax[0, 1].plot(self.cluster_memb_pos[:, i_m, 2], self.cluster_memb_pos[:, i_m, 1], lw=0.5, c='red', alpha=0.3)
                 ax[1, 0].plot(self.cluster_memb_pos[:, i_m, 0], self.cluster_memb_pos[:, i_m, 2], lw=0.5, c='red', alpha=0.3)
         # investigated particle movement
-        ax[0, 0].plot(self.particle_pos[:, 0], self.particle_pos[:, 1], lw=1, c='green')
-        ax[0, 1].plot(self.particle_pos[:, 2], self.particle_pos[:, 1], lw=1, c='green')
-        ax[1, 0].plot(self.particle_pos[:, 0], self.particle_pos[:, 2], lw=1, c='green')
+        if self.particle_pos is not None:
+            if idx_obj_only is not None:
+                i_m_to_plot = [idx_obj_only]
+            elif source_id is not None:
+                idx_obj_only = np.where(self.particle['source_id'] == source_id)[0]
+                i_m_to_plot = [idx_obj_only]
+            else:
+                i_m_to_plot = range(len(self.particle))
+            for i_m in i_m_to_plot:
+                ax[0, 0].plot(self.particle_pos[:, i_m, 0], self.particle_pos[:, i_m, 1], lw=0.5, c='green', alpha=0.3)
+                ax[0, 1].plot(self.particle_pos[:, i_m, 2], self.particle_pos[:, i_m, 1], lw=0.5, c='green', alpha=0.3)
+                ax[1, 0].plot(self.particle_pos[:, i_m, 0], self.particle_pos[:, i_m, 2], lw=0.5, c='green', alpha=0.3)
         # TEMPORARY: axis limits selection
         ax[0, 0].set(xlim=(-10e3, 10e3), ylim=(-10e3, 10e3))
         ax[0, 1].set(xlim=(-10e3, 10e3), ylim=(-10e3, 10e3))
         ax[1, 0].set(xlim=(-10e3, 10e3), ylim=(-10e3, 10e3))
         plt.suptitle('Cluster: '+self.id)
         plt.tight_layout()
+        plt.subplots_adjust(left=0.03, bottom=0.03, right=0.98, top=0.96, wspace=0.15, hspace=0.1)
         plt.grid(ls='--', alpha=0.5, color='black')
         if path is None:
             plt.show()
         else:
-            plt.savefig(path, dpi=400)
+            plt.savefig(path, dpi=350)
         plt.close()
 
     def init_test_particle(self, input_data):
@@ -330,12 +366,12 @@ class CLUSTER:
         vel_init = _data_stack(self.members, ['d_x', 'd_y', 'd_z'])
         obs_year = np.arange(0, years, step_years)
         for i_y in range(len(obs_year)):
-            pos_new = pos_init + vel_init * step_years
-            pos_init = np.array(pos_new)
             if compute_g:
                 g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy)
-                vel_new = vel_init + g_clust * step_years
-                vel_init = np.array(vel_new)
+            else:
+                g_clust=1.
+            # integrate particle for given time step in years
+            pos_init, vel_init = _integrate_pos_vel(pos_init, vel_init, g_clust, step_years, method='newt')
             if store_hist:
                 self.cluster_memb_pos.append(pos_init)
         # write results back
@@ -350,41 +386,135 @@ class CLUSTER:
         :param years:
         :param step_years:
         :param store_hist:
-        :param integrate_other_stars:
+        :param integrate_stars_pos:
+        :param integrate_stars_vel:
+        :param include_galaxy_pot:
         :return:
         """
+        self.step_years = step_years
+        #
         pos_init = _data_stack(self.particle, ['x', 'y', 'z'])
         vel_init = _data_stack(self.particle, ['d_x', 'd_y', 'd_z'])
         obs_year = np.arange(0, years, step_years)
         if store_hist:
-            self.particle_pos = np.zeros((len(obs_year), 3))
+            self.particle_pos = list([])
             self.cluster_memb_pos = list([])
         print 'Integrating orbit'
         for i_y in range(len(obs_year)):
             if i_y % 100 == 0:
                 print ' Time step: '+str(i_y+1), 'out of '+str(len(obs_year))
             g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy_pot)
-            # print pos_init, 'pc'
-            # print vel_init, 'pc/yr'
-            # print g_clust
-            # print step_years
-            # print g_clust * step_years, 'pc/yr'
-            # print np.sqrt(np.sum(vel_init**2))
-            pos_new = pos_init + vel_init * step_years
-            vel_new = vel_init + g_clust * step_years
-            # set computed values as new initial values
-            pos_init = np.array(pos_new)
-            vel_init = np.array(vel_new)
+            # integrate particle for given time step in years
+            pos_init, vel_init = _integrate_pos_vel(pos_init, vel_init, g_clust, step_years, method='newt')
             if store_hist:
-                self.particle_pos[i_y, :] = pos_init
+                self.particle_pos.append(pos_init)
             # correct positions of stars in cluster and in background
             if integrate_stars_pos:
                 # integrate for one time step
                 self._integrate_stars(years=step_years, step_years=step_years, include_galaxy=include_galaxy_pot,
-                                     include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist)
+                                      include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist)
         if store_hist and integrate_stars_pos:
             # stack computed coordinates along new axis
+            self.particle_pos = np.stack(self.particle_pos)
             self.cluster_memb_pos = np.stack(self.cluster_memb_pos)
         else:
+            self.particle_pos = None
             self.cluster_memb_pos = None
+
+    def determine_orbits_that_cross_cluster(self):
+        """
+
+        :return:
+        """
+        # number of time steps that the simulation was run for
+        print 'Determining crossing orbits'
+        n_steps = self.particle_pos.shape[0]
+        n_parti = self.particle_pos.shape[1]
+        # analyse every step
+        self.final_inside_hull = np.full((n_steps, n_parti), False)
+        for i_s in range(n_steps):
+            # create an convex hull out of cluster members positions
+            points_obj = MultiPoint(self.cluster_memb_pos[i_s, :, :].tolist())  # conversion to preserve z coordinate
+            hull_obj = points_obj.convex_hull
+            # investigate which points are in the hull
+            inside_hull = [hull_obj.contains(Point(particle_coord.tolist())) for particle_coord in self.particle_pos[i_s, :, :]]
+            self.final_inside_hull[i_s, :] = np.array(inside_hull)
+
+    def get_crossing_objects(self):
+        """
+
+        :return:
+        """
+        if self.final_inside_hull is None:
+            # first run the analysis of crossing orbits
+            self.determine_orbits_that_cross_cluster()
+        idx_ret = np.sum(self.final_inside_hull, axis=0) > 0
+        return self.particle[idx_ret]['source_id']
+
+    def plot_crossing_orbits(self, plot_prefix=None):
+        """
+
+        :param plot_prefix:
+        :return:
+        """
+        print 'Plotting crossing orbis'
+        if self.final_inside_hull is None:
+            # first run the analysis of crossing orbits
+            self.determine_orbits_that_cross_cluster()
+        # determine what is to be plotted
+        idx_to_plot = np.where(np.sum(self.final_inside_hull, axis=0) > 0)[0]
+        # perform plots
+        for idx_obj in idx_to_plot:
+            if plot_prefix is not None:
+                plot_path = plot_prefix + '_{:04.0f}.png'.format(idx_obj)
+            else:
+                plot_path = None
+            self.plot_cluster_xyz_movement(idx_obj_only=idx_obj, path=plot_path)
+
+    def animate_particle_movement(self, path='video.mp4', sobject_id=None, source_id=None):
+        """
+
+        :param path:
+        :param sobject_id:
+        :param source_id:
+        :return:
+        """
+        if sobject_id is None and source_id is None:
+            print 'Object to animate not defined'
+            return
+
+        print 'Creating animation'
+
+        def _update_graph(i_s):
+            graph_part._offsets3d = (self.particle_pos[i_s, idx_particle, 0],
+                                     self.particle_pos[i_s, idx_particle, 1],
+                                     self.particle_pos[i_s, idx_particle, 2])
+            graph_memb._offsets3d = (self.cluster_memb_pos[i_s, :, 0],
+                                     self.cluster_memb_pos[i_s, :, 1],
+                                     self.cluster_memb_pos[i_s, :, 2])
+            # TODO: better/faster definition of limits
+            ax.set(xlim=(np.min(self.cluster_memb_pos[i_s, :, 0]), np.max(self.cluster_memb_pos[i_s, :, 0])),
+                   ylim=(np.min(self.cluster_memb_pos[i_s, :, 1]), np.max(self.cluster_memb_pos[i_s, :, 1])),
+                   zlim=(np.min(self.cluster_memb_pos[i_s, :, 2]), np.max(self.cluster_memb_pos[i_s, :, 2])))
+            title.set_text('time={}'.format(i_s*self.step_years))
+
+        # get idx of particle
+        if source_id is not None:
+            idx_particle = np.where(self.particle['source_id'] == source_id)[0]
+
+        FFMpegWriter = animation.writers['ffmpeg']
+        writer = FFMpegWriter(fps=20)
+        fig = plt.figure()
+        ax = Axes3D(fig)
+        title = ax.set_title('')
+        graph_memb = ax.scatter([], [], [], lw=0, s=10, c='black')
+        graph_part = ax.scatter([], [], [], lw=0, s=15, c='red', marker='*')
+
+        n_steps = 500  # for the whole range of orbit simulation
+        movement_anim = animation.FuncAnimation(fig, _update_graph,
+                                                frames=np.int64(np.linspace(0, self.particle_pos.shape[0]-1, n_steps)))
+        movement_anim.save(path, writer, dpi=200)
+        plt.close()
+
+
 
