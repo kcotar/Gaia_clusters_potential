@@ -8,21 +8,23 @@ from galpy.orbit import Orbit
 from galpy.actionAngle import actionAngleStaeckel, actionAngleAdiabatic, estimateDeltaStaeckel, actionAngleSpherical
 
 
-# galahic 8414429 8417585
 
 data_dir = '/home/klemen/data4_mount/'
 # read Kharachenko clusters data
 clusters = Table.read(data_dir+'clusters/Kharchenko_2013/catalog.csv')
 # read Tgas data set
-gaia_data = Table.read(data_dir+'TGAS_data_set/TgasSource_all.fits')
+gaia_data = Table.read(data_dir+'TGAS_data_set/TgasSource_all_with_rv.fits')
+# gaia_data = gaia_data[np.logical_and(gaia_data['rv'] != 0, gaia_data['e_rv'] != 0)]
 galah_data = Table.read(data_dir+'sobject_iraf_52_reduced_20171111.fits')
 cannon_data = Table.read(data_dir+'sobject_iraf_iDR2_180108_cannon.fits')
 gaia_galah_xmatch = Table.read(data_dir+'galah_tgas_xmatch_20171111.csv')['sobject_id', 'source_id']
+
+# load isochrones into class
+iso = ISOCHRONES(data_dir+'isochrones/padova/isochrones_all.fits')
+
 gaia_ra_dec = coord.ICRS(ra=gaia_data['ra'] * un.deg,
                          dec=gaia_data['dec'] * un.deg,
                          distance=1e3/gaia_data['parallax'] * un.pc)
-# load isochrones into class
-iso = ISOCHRONES(data_dir+'isochrones/padova/isochrones_all.fits')
 
 selected_clusters = ['Alessi_13', 'ASCC_18', 'ASCC_20', 'Blanco_1', 'Collinder_65', 'Collinder_70', 'Melotte_20',
                      'Melotte_22', 'NGC_1039', 'NGC_2168', 'Platais_3', 'Platais_5', 'Stock_2']
@@ -30,9 +32,10 @@ selected_clusters = ['Alessi_13', 'ASCC_18', 'ASCC_20', 'Blanco_1', 'Collinder_6
 for obs_cluster in ['Melotte_22']:  #selected_clusters:
     print 'Working on:', obs_cluster
 
-    if not os.path.isdir(obs_cluster):
-        os.mkdir(obs_cluster)
-    os.chdir(obs_cluster)
+    out_dir = obs_cluster+'_with_rv'
+    if not os.path.isdir(out_dir):
+        os.mkdir(out_dir)
+    os.chdir(out_dir)
 
     clust_data = clusters[clusters['Cluster'] == obs_cluster]
     print 'Basic info -->', 'r2:', clust_data['r2'].data[0], 'pmra:', clust_data['pmRAc'].data[0], 'pmdec:', clust_data['pmDEc'].data[0]
@@ -49,31 +52,39 @@ for obs_cluster in ['Melotte_22']:  #selected_clusters:
                                np.abs(gaia_cluster_sub['pmdec'] - clust_data['pmDEc']) < 3.)
     idx_dist = np.abs(1e3/gaia_cluster_sub['parallax'] - clust_data['d']) < 20
     idx_members = np.logical_and(idx_kinem, idx_dist)
+    # additional rv refinement and selection of initial members
+    rv_mean = np.median(gaia_cluster_sub['rv'][idx_members])
+    rv_std = np.std(gaia_cluster_sub['rv'][idx_members])
+    idx_rv = np.abs(gaia_cluster_sub['rv'] - rv_mean) < rv_std*0.1
+    print 'RV: ', rv_mean, rv_std
+    idx_members = np.logical_and(idx_members, idx_rv)
+
+
     print np.sum(idx_members)
     if np.sum(idx_members) == 0:
         print ' Zero possible members'
         continue
 
 
-    # # galpy potential implementation onlys
-    # for clust_star in gaia_cluster_sub[idx_members]:
-    #
-    #     orbit = Orbit(vxvv=[clust_star['ra'] * un.deg,
-    #                         clust_star['dec'] * un.deg,
-    #                         1e3 / clust_star['parallax'] * un.pc,
-    #                         clust_star['pmra'] * un.mas / un.yr,
-    #                         clust_star['pmdec'] * un.mas / un.yr,
-    #                         clust_star['rv'] * un.km / un.s], radec=True)
-    #     orbit.turn_physical_on()
-    #
-    #     ts = np.linspace(0, 250., 2000) * un.Myr
-    #     orbit.integrate(ts, MWPotential2014)
-    #     plt.plot(orbit.x(ts), orbit.y(ts), lw=0.5, c='red', alpha=0.3)
-    # plt.xlabel('X')
-    # plt.ylabel('Y')
-    # plt.grid(ls='--', alpha=0.5, color='black')
-    # plt.savefig('orbits_galpy.png', dpi=400)
-    # plt.close()
+    # galpy potential implementation onlys
+    for clust_star in gaia_cluster_sub[idx_members]:
+
+        orbit = Orbit(vxvv=[clust_star['ra'] * un.deg,
+                            clust_star['dec'] * un.deg,
+                            1e3 / clust_star['parallax'] * un.pc,
+                            clust_star['pmra'] * un.mas / un.yr,
+                            clust_star['pmdec'] * un.mas / un.yr,
+                            clust_star['rv'] * un.km / un.s], radec=True)
+        orbit.turn_physical_on()
+
+        ts = np.linspace(0, -220., 5000) * un.Myr
+        orbit.integrate(ts, MWPotential2014)
+        plt.plot(orbit.x(ts), orbit.y(ts), lw=0.5, c='red', alpha=0.3)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.grid(ls='--', alpha=0.5, color='black')
+    plt.savefig('orbits_galpy.png', dpi=400)
+    plt.close()
 
     # my implementation of cluster class with only gravitational potential
     # create and use cluster class
@@ -91,7 +102,6 @@ for obs_cluster in ['Melotte_22']:  #selected_clusters:
         idx_test = gaia_cluster_sub_ra_dec.separation_3d(clust_center) < 60 * un.pc
         idx_test = np.logical_and(idx_test, ~idx_members)
         test_stars = gaia_cluster_sub[idx_test]
-        test_stars['rv'] = 0
         print 'Number of test stars in cluster vicinity:', len(test_stars)
 
         cluster_class.init_test_particle(test_stars)
@@ -101,7 +111,7 @@ for obs_cluster in ['Melotte_22']:  #selected_clusters:
         joblib.dump(cluster_class, pkl_file_test)
     else:
         cluster_class = joblib.load(pkl_file_test)
-    cluster_class.plot_cluster_xyz_movement(path='orbits_integration_multi.png')
+    # cluster_class.plot_cluster_xyz_movement(path='orbits_integration_multi.png')
 
     # cluster_class.plot_cluster_xyz_movement(source_id=49809491645958528)
     # cluster_class.plot_cluster_xyz_movement(source_id=63774182671931264)
@@ -109,17 +119,31 @@ for obs_cluster in ['Melotte_22']:  #selected_clusters:
 
     # cluster_class.plot_crossing_orbits(plot_prefix='crossing_orbit')
 
-    possible_ejected = cluster_class.get_crossing_objects()
-    print 'Galah stars: '
-    possible_ejected_galah = gaia_galah_xmatch[np.in1d(gaia_galah_xmatch['source_id'], possible_ejected)]['sobject_id', 'sobject_id']
-    print possible_ejected_galah
-    possible_ejected_galah = np.sort(possible_ejected_galah['sobject_id'])
-    print ', '.join([str(s) for s in possible_ejected_galah])
+    print 'Gaia source_ids:'
+    possible_ejected = cluster_class.get_crossing_objects(min_time=5e6)  # use crossing time for this?
+    print ', '.join([str(s) for s in np.sort(possible_ejected)])
+    print ' possible:', len(possible_ejected)
+    print
+    print 'Galah sobject_ids: '
+    possible_ejected_galah = gaia_galah_xmatch[np.in1d(gaia_galah_xmatch['source_id'], possible_ejected)]['sobject_id', 'source_id']
+    print ', '.join([str(s) for s in np.sort(possible_ejected_galah['sobject_id'])])
+    print ' possible:', len(possible_ejected_galah)
+    print
+
+    print 'Galah data:'
+    print galah_data[np.in1d(galah_data['sobject_id'], possible_ejected_galah['sobject_id'])]['sobject_id', 'rv_guess']
 
     # video and plot and plot outputs
-    for s_id in possible_ejected_galah['source_id']:
-        cluster_class.plot_cluster_xyz_movement(path='orbit_'+str(s_id)+'.png', source_id=s_id)
-        cluster_class.animate_particle_movement(path='video_'+str(s_id)+'.mp4', source_id=s_id)
+    for star_ids in possible_ejected_galah:
+        sob_id = star_ids['sobject_id']
+        sou_id = star_ids['source_id']
+        suffix = str(sob_id)+'_'+str(sou_id)
+        print 'Output results for:', suffix
+        cluster_class.plot_cluster_xyz_movement(path='orbit_'+suffix+'.png', source_id=sou_id)
+        cluster_class.animate_particle_movement(path='video_'+suffix+'.mp4', source_id=sou_id)
+        # it is also possible to create an abundance plot for Galah stars
+
+
 
     # print galah_data[np.in1d(galah_data['sobject_id'], possible_ejected_galah)]['rv_guess']
     # print cannon_data[np.in1d(cannon_data['sobject_id'], possible_ejected_galah)]['Feh_cannon', 'Al_abund_cannon','Ti_abund_cannon']

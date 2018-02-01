@@ -16,6 +16,11 @@ __pycache__/
 *.jpg
 *.fits
 
+# Analysis output files
+*.pkl
+*.mp4
+*.gif
+
 # Distribution / packaging
 .Python
 env/

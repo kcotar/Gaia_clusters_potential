@@ -7,7 +7,7 @@ import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
 from copy import deepcopy
 from galpy.potential import MWPotential2014, evaluatePotentials
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from scipy.spatial import ConvexHull, Delaunay
 from shapely.geometry import Point, MultiPoint
 
 
@@ -43,9 +43,15 @@ def _add_galactic_cartesian_data(input_data):
 
 
 def _cluster_parameters_cartesian(input_data, vel=False, pos=False):
+    """
+
+    :param input_data:
+    :param vel:
+    :param pos:
+    :return:
+    """
     if not vel and not pos:
         raise KeyError('Determine what to return')
-
     if vel:
         return [np.nanmedian(input_data['d_x']), np.nanmedian(input_data['d_y']), np.nanmedian(input_data['d_z'])]
     if pos:
@@ -74,6 +80,11 @@ def _data_stack_write_back(input_table, cols, input_array):
 
 
 def _size_vect(vect):
+    """
+
+    :param vect:
+    :return:
+    """
     if len(vect.shape) == 1:
         vect_len = np.sqrt(np.sum(vect ** 2))
         return vect_len
@@ -83,6 +94,15 @@ def _size_vect(vect):
 
 
 def _add_xyz_points(ax, in_data, c='black', s=2, compute_limits=False):
+    """
+
+    :param ax:
+    :param in_data:
+    :param c:
+    :param s:
+    :param compute_limits:
+    :return:
+    """
     ax[0, 0].scatter(in_data['x'], in_data['y'], lw=0, s=s, c=c)
     ax[0, 0].set(xlabel='X', ylabel='Y')
     ax[0, 1].scatter(in_data['z'], in_data['y'], lw=0, s=s, c=c)
@@ -108,6 +128,12 @@ def _add_xyz_plots(ax, in_data, c='black', lw=2, alpha=1., compute_limits=False)
 
 
 def _galactic_potential(r_gal, z_gal):
+    """
+
+    :param r_gal:
+    :param z_gal:
+    :return:
+    """
     m_sun = 2e30  # kg
     G_val = const.G.to(un.km ** 3 / (un.kg * un.s ** 2)).value  # km3 kg-1 s-2
     kpc_to_km = (un.kpc).to(un.km)
@@ -135,6 +161,14 @@ def _galactic_potential(r_gal, z_gal):
 
 
 def _get_gravity_accel(x, y, z, galpy_pot=False):
+    """
+
+    :param x:
+    :param y:
+    :param z:
+    :param galpy_pot:
+    :return:
+    """
     r_gal = np.sqrt(x ** 2 + y ** 2)/1e3  # in pc -> kpc
     z_gal = z/1e3  # in pc -> kpc as required by the function
     dr_gal = 2.5e-4  # in kpc
@@ -149,6 +183,15 @@ def _get_gravity_accel(x, y, z, galpy_pot=False):
 
 
 def _integrate_pos_vel(pos, vel, g, t, method='newt'):
+    """
+
+    :param pos:
+    :param vel:
+    :param g:
+    :param t:
+    :param method:
+    :return:
+    """
     # TODO: add more sophisticated and faster methods to do this
     if 'newt' in method:
         pos_new = pos + vel * t
@@ -421,7 +464,7 @@ class CLUSTER:
             self.particle_pos = None
             self.cluster_memb_pos = None
 
-    def determine_orbits_that_cross_cluster(self):
+    def determine_orbits_that_cross_cluster(self, method='scipy'):
         """
 
         :return:
@@ -433,22 +476,37 @@ class CLUSTER:
         # analyse every step
         self.final_inside_hull = np.full((n_steps, n_parti), False)
         for i_s in range(n_steps):
-            # create an convex hull out of cluster members positions
-            points_obj = MultiPoint(self.cluster_memb_pos[i_s, :, :].tolist())  # conversion to preserve z coordinate
-            hull_obj = points_obj.convex_hull
-            # investigate which points are in the hull
-            inside_hull = [hull_obj.contains(Point(particle_coord.tolist())) for particle_coord in self.particle_pos[i_s, :, :]]
-            self.final_inside_hull[i_s, :] = np.array(inside_hull)
+            if method is 'shapely':
+                # VERSION1: implementation using shapley - works only in 2D
+                # create an convex hull out of cluster members positions
+                points_obj = MultiPoint(self.cluster_memb_pos[i_s, :, :].tolist())  # conversion to preserve z coordinate
+                hull_obj = points_obj.convex_hull
+                # investigate which points are in the hull
+                inside_hull = [hull_obj.contains(Point(particle_coord.tolist())) for particle_coord in self.particle_pos[i_s, :, :]]
+                self.final_inside_hull[i_s, :] = np.array(inside_hull)
+            else:
+                # VERSION2: using scipy ConvexHull and Delaunay teseltation
+                # determine convex hull vertices from members points
+                idx_hull_vert = ConvexHull(self.cluster_memb_pos[i_s, :, :]).vertices
+                # create a Delaunay grid based on given points
+                delanuay_surf = Delaunay(self.cluster_memb_pos[i_s, :, :][idx_hull_vert])
+                inside_hull = delanuay_surf.find_simplex(self.particle_pos[i_s, :, :]) >= 0
+                self.final_inside_hull[i_s, :] = np.array(inside_hull)
 
-    def get_crossing_objects(self):
+    def get_crossing_objects(self, min_time=None):
         """
 
+        :param min_time:
         :return:
         """
         if self.final_inside_hull is None:
             # first run the analysis of crossing orbits
             self.determine_orbits_that_cross_cluster()
-        idx_ret = np.sum(self.final_inside_hull, axis=0) > 0
+        time_in_cluster = np.sum(self.final_inside_hull, axis=0) * np.abs(self.step_years)
+        if min_time is not None:
+            idx_ret = time_in_cluster > min_time
+        else:
+            idx_ret = time_in_cluster > 0
         return self.particle[idx_ret]['source_id']
 
     def plot_crossing_orbits(self, plot_prefix=None):
@@ -486,21 +544,38 @@ class CLUSTER:
         print 'Creating animation'
 
         def _update_graph(i_s):
-            graph_part._offsets3d = (self.particle_pos[i_s, idx_particle, 0],
-                                     self.particle_pos[i_s, idx_particle, 1],
-                                     self.particle_pos[i_s, idx_particle, 2])
+            # TODO: is there any speedup if array subset at time i_s is read only once?
             graph_memb._offsets3d = (self.cluster_memb_pos[i_s, :, 0],
                                      self.cluster_memb_pos[i_s, :, 1],
                                      self.cluster_memb_pos[i_s, :, 2])
+            graph_part._offsets3d = (self.particle_pos[i_s, idx_particle, 0],
+                                     self.particle_pos[i_s, idx_particle, 1],
+                                     self.particle_pos[i_s, idx_particle, 2])
             # TODO: better/faster definition of limits
-            ax.set(xlim=(np.min(self.cluster_memb_pos[i_s, :, 0]), np.max(self.cluster_memb_pos[i_s, :, 0])),
-                   ylim=(np.min(self.cluster_memb_pos[i_s, :, 1]), np.max(self.cluster_memb_pos[i_s, :, 1])),
-                   zlim=(np.min(self.cluster_memb_pos[i_s, :, 2]), np.max(self.cluster_memb_pos[i_s, :, 2])))
-            title.set_text('time={}'.format(i_s*self.step_years))
+            x_lim = (np.min(self.cluster_memb_pos[i_s, :, 0]), np.max(self.cluster_memb_pos[i_s, :, 0]))
+            y_lim = (np.min(self.cluster_memb_pos[i_s, :, 1]), np.max(self.cluster_memb_pos[i_s, :, 1]))
+            z_lim = (np.min(self.cluster_memb_pos[i_s, :, 2]), np.max(self.cluster_memb_pos[i_s, :, 2]))
+            d_x = (x_lim[1] - x_lim[0]) / 2. * 0.3
+            d_y = (y_lim[1] - y_lim[0]) / 2. * 0.3
+            d_z = (z_lim[1] - z_lim[0]) / 2. * 0.3
+            ax.set(xlim=(x_lim[0]-d_x, x_lim[1]+d_x),
+                   ylim=(y_lim[0]-d_y, y_lim[1]+d_y),
+                   zlim=(z_lim[0]-d_z, z_lim[1]+d_z))
+            view_angle = np.rad2deg(np.arctan2((y_lim[1]+y_lim[0])/2., (x_lim[1]+x_lim[0])/2.)) - 180.
+            ax.view_init(elev=10, azim=view_angle)
+            title.set_text('Time = {:.1f} Myr'.format(i_s*self.step_years/1e6, view_angle))
+            # set colour of the title according to the position of particle inside cluster
+            if self.final_inside_hull[i_s, idx_particle] >= 1:
+                plt.setp(title, color='red')
+            else:
+                plt.setp(title, color='black')
 
         # get idx of particle
         if source_id is not None:
             idx_particle = np.where(self.particle['source_id'] == source_id)[0]
+            if len(idx_particle) == 0:
+                print ' Skipping animation. Given source_id ('+str(source_id)+') not found between integrated particles'
+                return
 
         FFMpegWriter = animation.writers['ffmpeg']
         writer = FFMpegWriter(fps=20)
@@ -508,13 +583,30 @@ class CLUSTER:
         ax = Axes3D(fig)
         title = ax.set_title('')
         graph_memb = ax.scatter([], [], [], lw=0, s=10, c='black')
-        graph_part = ax.scatter([], [], [], lw=0, s=15, c='red', marker='*')
+        graph_part = ax.scatter([], [], [], lw=0, s=20, c='red', marker='*')
 
-        n_steps = 500  # for the whole range of orbit simulation
+        n_steps = 1200  # for the whole range of orbit simulation
         movement_anim = animation.FuncAnimation(fig, _update_graph,
                                                 frames=np.int64(np.linspace(0, self.particle_pos.shape[0]-1, n_steps)))
-        movement_anim.save(path, writer, dpi=200)
+        movement_anim.save(path, writer, dpi=150)
         plt.close()
+
+
+    # --------------------------------------------------
+    # ---------- ONLY TESTS BELLOW THIS POINT ----------
+    # --------------------------------------------------
+
+    def _test_convex_hull(self, idx_time, idx_particle):
+        memb_data = self.cluster_memb_pos[idx_time, :, :]
+        part_data = self.particle_pos[idx_time, idx_particle, :][0]
+        mp = MultiPoint(memb_data.tolist())
+        p = Point(part_data.tolist())
+        h = mp.convex_hull
+        print 'Is inside: ', h.contains(p)
+        # lets see what strange is happening here
+        # not even needed any more as the library manual states:
+        # A third z coordinate value may be used when constructing instances, but has no effect
+        # on geometric analysis. All operations are performed in the x-y plane.
 
 
 
