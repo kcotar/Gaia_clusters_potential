@@ -8,15 +8,20 @@ from galpy.potential import MWPotential2014, LogarithmicHaloPotential, Isochrone
 from galpy.orbit import Orbit
 from galpy.actionAngle import actionAngleStaeckel, actionAngleAdiabatic, estimateDeltaStaeckel, actionAngleSpherical
 
+RV_USE = True
 RV_ONLY = True
+NO_INTERACTIONS = False
+REVERSE_VEL = True
+GALAXY_POTENTIAL = True
 
 data_dir = '/home/klemen/data4_mount/'
 # read Kharachenko clusters data
 clusters = Table.read(data_dir+'clusters/Kharchenko_2013/catalog.csv')
 # read Tgas data set
-if RV_ONLY:
+if RV_USE:
     gaia_data = Table.read(data_dir + 'TGAS_data_set/TgasSource_all_with_rv.fits')
-    gaia_data = gaia_data[np.logical_and(gaia_data['rv'] != 0, gaia_data['e_rv'] != 0)]
+    if RV_ONLY:
+        gaia_data = gaia_data[np.logical_and(gaia_data['rv'] != 0, gaia_data['e_rv'] != 0)]
 else:
     gaia_data = Table.read(data_dir+'TGAS_data_set/TgasSource_all.fits')
 galah_data = Table.read(data_dir+'sobject_iraf_52_reduced_20171111.fits')
@@ -32,12 +37,20 @@ gaia_ra_dec = coord.ICRS(ra=gaia_data['ra'] * un.deg,
 selected_clusters = ['Alessi_13', 'ASCC_18', 'ASCC_20', 'Blanco_1', 'Collinder_65', 'Collinder_70', 'Melotte_20',
                      'Melotte_22', 'NGC_1039', 'NGC_2168', 'Platais_3', 'Platais_5', 'Stock_2']
 # iterate over preselected clusters
-for obs_cluster in selected_clusters:
+for obs_cluster in ['Melotte_22']:  # selected_clusters:
     print 'Working on:', obs_cluster
 
     out_dir = obs_cluster
-    if RV_ONLY:
-        out_dir += '_with_rv_only'
+    if RV_USE:
+        out_dir += '_with_rv'
+        if RV_ONLY:
+            out_dir += '_only'
+    if NO_INTERACTIONS:
+        out_dir += '_nointer'
+    if REVERSE_VEL:
+        out_dir += '_reversevel'
+    if not GALAXY_POTENTIAL:
+        out_dir += '_nogalpot'
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
     os.chdir(out_dir)
@@ -58,17 +71,19 @@ for obs_cluster in selected_clusters:
     idx_dist = np.abs(1e3/gaia_cluster_sub['parallax'] - clust_data['d']) < 20
     idx_members = np.logical_and(idx_kinem, idx_dist)
 
-    if RV_ONLY:
+    if RV_USE:
         # additional rv refinement and selection of initial members
+        print np.sum(idx_members)
         rv_mean = np.median(gaia_cluster_sub['rv'][idx_members])
         rv_std = np.std(gaia_cluster_sub['rv'][idx_members])
-        idx_rv = np.abs(gaia_cluster_sub['rv'] - rv_mean) < rv_std*0.1
+        idx_rv = np.abs(gaia_cluster_sub['rv'] - rv_mean) < 5  # rv_std*0.1
         print 'RV: ', rv_mean, rv_std
         idx_members = np.logical_and(idx_members, idx_rv)
 
     print np.sum(idx_members)
     if np.sum(idx_members) < 5:
         print ' Low possible members'
+        os.chdir('..')
         continue
 
     # determine Galah and cannon members data
@@ -100,7 +115,7 @@ for obs_cluster in selected_clusters:
 
     pkl_file_test = 'cluster_simulation.pkl'  # TEMP: for faster processing and testing
     if not os.path.isfile(pkl_file_test):
-        cluster_class = CLUSTER(meh=0.0, age=10 ** clust_data['logt'], isochrone=iso, id=obs_cluster)
+        cluster_class = CLUSTER(meh=0.0, age=10 ** clust_data['logt'], isochrone=iso, id=obs_cluster, reverse=REVERSE_VEL)
         cluster_class.init_members(gaia_cluster_sub[idx_members])
         cluster_class.init_background(gaia_cluster_sub[~idx_members])
         cluster_class.plot_cluster_xyz(path=obs_cluster+'_stanje_zac.png')
@@ -114,8 +129,8 @@ for obs_cluster in selected_clusters:
         print 'Number of test stars in cluster vicinity:', len(test_stars)
 
         cluster_class.init_test_particle(test_stars)
-        cluster_class.integrate_particle(-220e6, step_years=-1e4, include_galaxy_pot=True,
-                                         integrate_stars_pos=True, integrate_stars_vel=True)
+        cluster_class.integrate_particle(200e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
+                                         integrate_stars_pos=True, integrate_stars_vel=True, disable_interactions=NO_INTERACTIONS)
         cluster_class.determine_orbits_that_cross_cluster()
         joblib.dump(cluster_class, pkl_file_test)
     else:
@@ -141,11 +156,13 @@ for obs_cluster in selected_clusters:
 
         suffix = str(sob_id)+'_'+str(sou_id)
         print 'Output results for:', suffix
-        # cluster_class.plot_cluster_xyz_movement(path=suffix+'_orbit.png', source_id=sou_id)
-        # cluster_class.animate_particle_movement(path=suffix+'_video.mp4', source_id=sou_id)
+        cluster_class.plot_cluster_xyz_movement(source_id=sou_id, path=suffix+'_orbit.png')
+        cluster_class.animate_particle_movement(path=suffix+'_video.mp4', source_id=sou_id, t_step=0.2e6)
 
         cannon_observed_data = cannon_data[np.in1d(cannon_data['sobject_id'], sob_id)]
         if len(cannon_observed_data) == 1:
+            # cluster_class.plot_cluster_xyz_movement(source_id=sou_id)#, path=suffix + '_orbit.png')
+            # cluster_class.animate_particle_movement(path=suffix + '_video.mp4', source_id=sou_id, t_step=0.2e6)
             # it is also possible to create an abundance plot for Galah stars in Cannon dataset
             plot_abundances_histograms(cannon_cluster_data, cannon_observed_data,
                                        use_flag=True, path=suffix+'_abund.png')

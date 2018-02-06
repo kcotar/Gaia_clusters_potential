@@ -9,12 +9,18 @@ from copy import deepcopy
 from galpy.potential import MWPotential2014, evaluatePotentials
 from scipy.spatial import ConvexHull, Delaunay
 from shapely.geometry import Point, MultiPoint
+from time import time
+from multiprocessing import Pool
+from functools import partial
+np.seterr(invalid='ignore')
 
 
-def _add_galactic_cartesian_data(input_data):
+def _add_galactic_cartesian_data(input_data, reverse=False, gal_coor=True):
     """
 
     :param input_data:
+    :param reverse:
+    :param gal_coor:
     :return:
     """
     output_data = deepcopy(input_data)
@@ -26,8 +32,10 @@ def _add_galactic_cartesian_data(input_data):
                         pm_dec=input_data['pmdec'] * un.mas / un.yr,
                         radial_velocity=input_data['rv'] * un.km / un.s)
     # convert to galactic cartesian values
-    # cartesian_coord = ra_dec.transform_to(coord.Galactic).cartesian
-    cartesian_coord = ra_dec.transform_to(coord.Galactocentric).cartesian
+    if not gal_coor:
+        cartesian_coord = ra_dec.transform_to(coord.Galactic).cartesian
+    else:
+        cartesian_coord = ra_dec.transform_to(coord.Galactocentric).cartesian
     # store computed positional values back to the
     output_data['x'] = cartesian_coord.x.value
     output_data['y'] = cartesian_coord.y.value
@@ -36,9 +44,14 @@ def _add_galactic_cartesian_data(input_data):
     cartesian_vel = cartesian_coord.differentials
     cartesian_vel = cartesian_vel[cartesian_vel.keys()[0]]
     # convert them to pc/yr for easier computation
-    output_data['d_x'] = cartesian_vel.d_x.to(un.pc / un.yr).value
-    output_data['d_y'] = cartesian_vel.d_y.to(un.pc / un.yr).value
-    output_data['d_z'] = cartesian_vel.d_z.to(un.pc / un.yr).value
+    if reverse:
+        vel_multi = -1.
+    else:
+        vel_multi = 1.
+    output_data['d_x'] = vel_multi * cartesian_vel.d_x.to(un.pc / un.yr).value
+    output_data['d_y'] = vel_multi * cartesian_vel.d_y.to(un.pc / un.yr).value
+    output_data['d_z'] = vel_multi * cartesian_vel.d_z.to(un.pc / un.yr).value
+
     return output_data
 
 
@@ -123,6 +136,16 @@ def _add_xyz_points(ax, in_data, c='black', s=2, compute_limits=False):
 
 
 def _add_xyz_plots(ax, in_data, c='black', lw=2, alpha=1., compute_limits=False):
+    """
+
+    :param ax:
+    :param in_data:
+    :param c:
+    :param lw:
+    :param alpha:
+    :param compute_limits:
+    :return:
+    """
     # TODO
     pass
 
@@ -213,21 +236,39 @@ def _integrate_pos_vel(pos, vel, g, t, method='newt'):
     return pos_new, vel_new
 
 
+def _nonzero_sep_only(in_2d_a):
+    return (in_2d_a != 0).all(axis=1)
+
+
+def _func_g_vect_one(loc_vec_one, loc_members, mass_memb, G_const):
+    vect_memb = loc_vec_one - loc_members
+    idx_star_use = _nonzero_sep_only(vect_memb)
+    return -1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb) ** 3)[idx_star_use], axis=0)
+
+
 class CLUSTER:
     """
 
     """
 
-    def __init__(self, meh, age, isochrone, id=None):
+    def __init__(self, meh, age, isochrone, id=None, reverse=False, galactocentric=True, verbose=False):
         """
 
-        :param meh: in dex
+        :param meh:
         :param age:
+        :param isochrone:
+        :param id:
+        :param reverse:
+        :param galactocentric:
+        :param verbose:
         """
+        self.verbose = verbose
         # input cluster values
         self.cluster_meh = meh
         self.cluster_age = age
         self.cluster_iso = isochrone
+        self.reverse_orbit = reverse
+        self.galactic_coord = galactocentric
         self.id = str(id)
         if not self.cluster_iso._is_isochrone_selected():
             self.cluster_iso.select_isochrone(self.cluster_meh, self.cluster_age)
@@ -248,7 +289,6 @@ class CLUSTER:
         # integration settings
         self.step_years = None
 
-
     def init_members(self, members_data):
         """
 
@@ -256,7 +296,7 @@ class CLUSTER:
         :return:
         """
         # compute their xyz position and velocities
-        self.members = _add_galactic_cartesian_data(members_data)
+        self.members = _add_galactic_cartesian_data(members_data, reverse=self.reverse_orbit, gal_coor=self.galactic_coord)
         # determine mean parameters of the cluster
         self.cluster_center_vel = _cluster_parameters_cartesian(self.members, vel=True)
         self.cluster_center_pos = _cluster_parameters_cartesian(self.members, pos=True)
@@ -268,7 +308,7 @@ class CLUSTER:
         :return:
         """
         # compute their xyz position and velocities
-        self.members_background = _add_galactic_cartesian_data(members_data)
+        self.members_background = _add_galactic_cartesian_data(members_data, reverse=self.reverse_orbit, gal_coor=self.galactic_coord)
 
     def estimate_masses(self):
         """
@@ -288,7 +328,7 @@ class CLUSTER:
         # print self.members['Mass']
 
     def _potential_at_coordinates(self, loc_vec,
-                                  include_background=False, include_galaxy=False):
+                                  include_background=False, include_galaxy=False, no_interactions=False):
         """
 
         :param loc_vec:
@@ -296,8 +336,6 @@ class CLUSTER:
         :param include_galaxy:
         :return:
         """
-        def _nonzero_sep_only(in_2d_a):
-            return (in_2d_a != 0).all(axis=1)
 
         # TODO: include implementation for potential of background stellar members and galaxy
         if 'Mass' not in self.members.colnames:
@@ -311,18 +349,32 @@ class CLUSTER:
             vect_memb = loc_vec - loc_members
             idx_star_use = _nonzero_sep_only(vect_memb)
             # compute gravitational potential
-            g_vect = -1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb)**3)[idx_star_use], axis=0)
+            if no_interactions:
+                g_vect = 0.
+            else:
+                g_vect = -1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb)**3)[idx_star_use], axis=0)
             if include_galaxy:
                 g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2], galpy_pot=False)
                 g_vect += (g_pot * loc_vec / _size_vect(loc_vec))[0]  # vector from center of Galaxy
         else:
             # TODO: faster implementation using array operations instead for loop
-            g_vect_list = list([])
-            for loc_vec_one in loc_vec:
-                vect_memb = loc_vec_one - loc_members
-                idx_star_use = _nonzero_sep_only(vect_memb)
-                g_vect_list.append(-1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb) ** 3)[idx_star_use], axis=0))
-            g_vect = np.vstack(g_vect_list)
+            if no_interactions:
+                g_vect = 0.
+            else:
+                # TEMP: palatalization attempts
+                # g_vect_list = Parallel(n_jobs=2, mmap_mode='r', backend='threading')(delayed(_func_g_vect_one)(loc_vec_one, loc_members, mass_memb, G_const) for loc_vec_one in loc_vec)
+                pool = Pool(processes=2)  # greatest speedup with 2 processes
+                _func_g_vect_one_partial = partial(_func_g_vect_one, loc_members=loc_members, mass_memb=mass_memb, G_const=G_const)
+                g_vect_list = pool.map(_func_g_vect_one_partial, loc_vec)
+                pool.close()
+
+                # g_vect_list = list([])
+                # for loc_vec_one in loc_vec:
+                #     vect_memb = loc_vec_one - loc_members
+                #     idx_star_use = _nonzero_sep_only(vect_memb)
+                #     g_vect_list.append(-1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb) ** 3)[idx_star_use], axis=0))
+                g_vect = np.vstack(g_vect_list)
+
             if include_galaxy:
                 g_pot = _get_gravity_accel(loc_vec[:, 0], loc_vec[:, 1], loc_vec[:, 2], galpy_pot=False)
                 g_pot = g_pot.repeat(3).reshape(loc_vec.shape[0], 3)
@@ -351,6 +403,10 @@ class CLUSTER:
     def plot_cluster_xyz_movement(self, idx_obj_only=None, path=None, source_id=None, sobject_id=None):
         """
 
+        :param idx_obj_only:
+        :param path:
+        :param source_id:
+        :param sobject_id:
         :return:
         """
         fig, ax = plt.subplots(2, 2, figsize=(10, 10))
@@ -392,10 +448,10 @@ class CLUSTER:
         plt.close()
 
     def init_test_particle(self, input_data):
-        self.particle = _add_galactic_cartesian_data(input_data)
+        self.particle = _add_galactic_cartesian_data(input_data, reverse=self.reverse_orbit, gal_coor=self.galactic_coord)
 
     def _integrate_stars(self, years=1, step_years=1., include_galaxy=False,
-                        include_background=False, compute_g=False, store_hist=False):
+                        include_background=False, compute_g=False, store_hist=False, no_interactions=False):
         """
 
         :param years:
@@ -410,9 +466,9 @@ class CLUSTER:
         obs_year = np.arange(0, years, step_years)
         for i_y in range(len(obs_year)):
             if compute_g:
-                g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy)
+                g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy, no_interactions=no_interactions)
             else:
-                g_clust=1.
+                g_clust = 0.
             # integrate particle for given time step in years
             pos_init, vel_init = _integrate_pos_vel(pos_init, vel_init, g_clust, step_years, method='newt')
             if store_hist:
@@ -423,7 +479,8 @@ class CLUSTER:
             _data_stack_write_back(self.members, ['d_x', 'd_y', 'd_z'], vel_init)
 
     def integrate_particle(self, years=1, step_years=1., store_hist=True,
-                           integrate_stars_pos=False, integrate_stars_vel=False, include_galaxy_pot=False):
+                           integrate_stars_pos=False, integrate_stars_vel=False, include_galaxy_pot=False,
+                           disable_interactions=False):
         """
 
         :param years:
@@ -432,6 +489,7 @@ class CLUSTER:
         :param integrate_stars_pos:
         :param integrate_stars_vel:
         :param include_galaxy_pot:
+        :param disable_interactions:
         :return:
         """
         self.step_years = step_years
@@ -446,7 +504,8 @@ class CLUSTER:
         for i_y in range(len(obs_year)):
             if i_y % 100 == 0:
                 print ' Time step: '+str(i_y+1), 'out of '+str(len(obs_year))
-            g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy_pot)
+            time_s = time()
+            g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy_pot, no_interactions=disable_interactions)
             # integrate particle for given time step in years
             pos_init, vel_init = _integrate_pos_vel(pos_init, vel_init, g_clust, step_years, method='newt')
             if store_hist:
@@ -455,7 +514,10 @@ class CLUSTER:
             if integrate_stars_pos:
                 # integrate for one time step
                 self._integrate_stars(years=step_years, step_years=step_years, include_galaxy=include_galaxy_pot,
-                                      include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist)
+                                      include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist, no_interactions=disable_interactions)
+            if self.verbose:
+                print 'Step integ s:', time()-time_s
+
         if store_hist and integrate_stars_pos:
             # stack computed coordinates along new axis
             self.particle_pos = np.stack(self.particle_pos)
@@ -529,12 +591,13 @@ class CLUSTER:
                 plot_path = None
             self.plot_cluster_xyz_movement(idx_obj_only=idx_obj, path=plot_path)
 
-    def animate_particle_movement(self, path='video.mp4', sobject_id=None, source_id=None):
+    def animate_particle_movement(self, path='video.mp4', sobject_id=None, source_id=None, t_step=None):
         """
 
         :param path:
         :param sobject_id:
         :param source_id:
+        :param t_step:
         :return:
         """
         if sobject_id is None and source_id is None:
@@ -552,16 +615,21 @@ class CLUSTER:
                                      self.particle_pos[i_s, idx_particle, 1],
                                      self.particle_pos[i_s, idx_particle, 2])
             # TODO: better/faster definition of limits
-            x_lim = (np.min(self.cluster_memb_pos[i_s, :, 0]), np.max(self.cluster_memb_pos[i_s, :, 0]))
-            y_lim = (np.min(self.cluster_memb_pos[i_s, :, 1]), np.max(self.cluster_memb_pos[i_s, :, 1]))
-            z_lim = (np.min(self.cluster_memb_pos[i_s, :, 2]), np.max(self.cluster_memb_pos[i_s, :, 2]))
-            d_x = (x_lim[1] - x_lim[0]) / 2. * 0.3
-            d_y = (y_lim[1] - y_lim[0]) / 2. * 0.3
-            d_z = (z_lim[1] - z_lim[0]) / 2. * 0.3
-            ax.set(xlim=(x_lim[0]-d_x, x_lim[1]+d_x),
-                   ylim=(y_lim[0]-d_y, y_lim[1]+d_y),
-                   zlim=(z_lim[0]-d_z, z_lim[1]+d_z))
-            view_angle = np.rad2deg(np.arctan2((y_lim[1]+y_lim[0])/2., (x_lim[1]+x_lim[0])/2.)) - 180.
+            # x_lim = (np.min(self.cluster_memb_pos[i_s, :, 0]), np.max(self.cluster_memb_pos[i_s, :, 0]))
+            # y_lim = (np.min(self.cluster_memb_pos[i_s, :, 1]), np.max(self.cluster_memb_pos[i_s, :, 1]))
+            # z_lim = (np.min(self.cluster_memb_pos[i_s, :, 2]), np.max(self.cluster_memb_pos[i_s, :, 2]))
+            # d_x = (x_lim[1] - x_lim[0]) / 2. * 0.3
+            # d_y = (y_lim[1] - y_lim[0]) / 2. * 0.3
+            # d_z = (z_lim[1] - z_lim[0]) / 2. * 0.3
+            # ax.set(xlim=(x_lim[0]-d_x, x_lim[1]+d_x),
+            #        ylim=(y_lim[0]-d_y, y_lim[1]+d_y),
+            #        zlim=(z_lim[0]-d_z, z_lim[1]+d_z))
+            # view_angle = np.rad2deg(np.arctan2((y_lim[1] + y_lim[0]) / 2., (x_lim[1] + x_lim[0]) / 2.)) - 180.
+            d_axis = 80  # pc
+            ax.set(xlim=(self.particle_pos[i_s, idx_particle, 0] - d_axis, self.particle_pos[i_s, idx_particle, 0] + d_axis),
+                   ylim=(self.particle_pos[i_s, idx_particle, 1] - d_axis, self.particle_pos[i_s, idx_particle, 1] + d_axis),
+                   zlim=(self.particle_pos[i_s, idx_particle, 2] - d_axis, self.particle_pos[i_s, idx_particle, 2] + d_axis))
+            view_angle = np.rad2deg(np.arctan2(self.particle_pos[i_s, idx_particle, 1], self.particle_pos[i_s, idx_particle, 0]))[0] - 180.
             ax.view_init(elev=10, azim=view_angle)
             title.set_text('Time = {:.1f} Myr'.format(i_s*self.step_years/1e6, view_angle))
             # set colour of the title according to the position of particle inside cluster
@@ -585,9 +653,14 @@ class CLUSTER:
         graph_memb = ax.scatter([], [], [], lw=0, s=10, c='black')
         graph_part = ax.scatter([], [], [], lw=0, s=20, c='red', marker='*')
 
-        n_steps = 1200  # for the whole range of orbit simulation
+        n_time_integ = self.particle_pos.shape[0]
+        # determine time interval between video frames
+        if t_step is None:
+            t_step = self.step_years
+        # determine number odf frames based on their interval
+        n_steps = np.int64(n_time_integ*self.step_years / t_step)  # for the whole range of orbit simulation
         movement_anim = animation.FuncAnimation(fig, _update_graph,
-                                                frames=np.int64(np.linspace(0, self.particle_pos.shape[0]-1, n_steps)))
+                                                frames=np.int64(np.linspace(0, n_time_integ-1, n_steps)))
         movement_anim.save(path, writer, dpi=150)
         plt.close()
 
