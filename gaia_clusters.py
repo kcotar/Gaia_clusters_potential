@@ -8,8 +8,8 @@ from galpy.potential import MWPotential2014, LogarithmicHaloPotential, Isochrone
 from galpy.orbit import Orbit
 from galpy.actionAngle import actionAngleStaeckel, actionAngleAdiabatic, estimateDeltaStaeckel, actionAngleSpherical
 
-RV_USE = True
-RV_ONLY = False
+RV_USE = False
+RV_ONLY = True
 NO_INTERACTIONS = True
 REVERSE_VEL = True
 GALAXY_POTENTIAL = True
@@ -77,9 +77,32 @@ for obs_cluster in np.unique(clusters['Cluster']):
         os.chdir('..')
         continue
 
+    # print gaia_cluster_sub[idx_members]['rv', 'pmra', 'pmdec']
+
+    # galpy potential implementation onlys
+    for clust_star in gaia_cluster_sub[idx_members]:
+        orbit = Orbit(vxvv=[clust_star['ra'] * un.deg,
+                            clust_star['dec'] * un.deg,
+                            1e3 / clust_star['parallax'] * un.pc,
+                            clust_star['pmra'] * un.mas / un.yr,
+                            clust_star['pmdec'] * un.mas / un.yr,
+                            clust_star['rv'] * un.km / un.s], radec=True)
+        orbit.turn_physical_on()
+
+        ts = np.linspace(0, -220., 5000) * un.Myr
+        orbit.integrate(ts, MWPotential2014)
+        plt.plot(orbit.x(ts), orbit.y(ts), lw=0.5, c='red', alpha=0.3)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.grid(ls='--', alpha=0.5, color='black')
+    plt.savefig('orbits_galpy.png', dpi=400)
+    plt.close()
+
     # determine Galah and cannon members data
     cluster_members_galah = gaia_galah_xmatch[np.in1d(gaia_galah_xmatch['source_id'], gaia_cluster_sub[idx_members]['source_id'])]['sobject_id']
     cannon_cluster_data = cannon_data[np.in1d(cannon_data['sobject_id'], cluster_members_galah)]
+
+    # print cluster_members_galah['sobject_id']
 
     pkl_file_test = 'cluster_simulation.pkl'  # TEMP: for faster processing and testing
     if not os.path.isfile(pkl_file_test):
@@ -98,8 +121,9 @@ for obs_cluster in np.unique(clusters['Cluster']):
         print 'Number of test stars in cluster vicinity:', len(test_stars)
 
         cluster_class.init_test_particle(test_stars)
-        cluster_class.integrate_particle(220e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
-                                         integrate_stars_pos=True, integrate_stars_vel=True, disable_interactions=NO_INTERACTIONS)
+        cluster_class.galpy_run_all(members=True, particles=True, total_time=-220e6, step_years=1e4)
+        # cluster_class.integrate_particle(220e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
+        #                                  integrate_stars_pos=True, integrate_stars_vel=True, disable_interactions=NO_INTERACTIONS)
         cluster_class.determine_orbits_that_cross_cluster()
         joblib.dump(cluster_class, pkl_file_test)
     else:
@@ -127,11 +151,12 @@ for obs_cluster in np.unique(clusters['Cluster']):
         suffix = str(sob_id) + '_' + str(sou_id)
         print 'Output results for:', suffix
         cluster_class.plot_cluster_xyz_movement(path=suffix + '_orbit.png', source_id=sou_id)
-        cluster_class.animate_particle_movement(path=suffix + '_video.mp4', source_id=sou_id)
+        # cluster_class.animate_particle_movement(path=suffix + '_video.mp4', source_id=sou_id, t_step=0.5e6)
 
         cannon_observed_data = cannon_data[np.in1d(cannon_data['sobject_id'], sob_id)]
         if len(cannon_observed_data) == 1:
             # it is also possible to create an abundance plot for Galah stars in Cannon dataset
+            cluster_class.animate_particle_movement(path=suffix + '_video.mp4', source_id=sou_id, t_step=0.5e6)
             plot_abundances_histograms(cannon_cluster_data, cannon_observed_data,
                                        use_flag=True, path=suffix + '_abund.png')
 

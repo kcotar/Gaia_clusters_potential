@@ -7,6 +7,7 @@ import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
 from copy import deepcopy
 from galpy.potential import MWPotential2014, evaluatePotentials
+from galpy.orbit import Orbit
 from scipy.spatial import ConvexHull, Delaunay
 from shapely.geometry import Point, MultiPoint
 from time import time
@@ -664,11 +665,58 @@ class CLUSTER:
         movement_anim.save(path, writer, dpi=150)
         plt.close()
 
+    # --------------------------------------------------
+    # ---------- ONLY TESTS BELLOW THIS POINT ----------
+    # --------------------------------------------------
+    def galpy_run_all(self, members=True, particles=True, total_time=200e6, step_years=1e5):
+        """
+
+        :param members:
+        :param particles:
+        :param total_time:
+        :param step_years:
+        :return:
+        """
+        self.step_years = step_years
+        n_memb = len(self.members)
+        n_part = len(self.particle)
+        n_ts = np.abs(np.int64(total_time/step_years))
+        ts = np.linspace(0., total_time/1e6, n_ts) * un.Myr
+
+        def _integrate_orbit(star_data, time_steps):
+            orbit = Orbit(vxvv=[star_data['ra'] * un.deg,
+                                star_data['dec'] * un.deg,
+                                1e3 / star_data['parallax'] * un.pc,
+                                star_data['pmra'] * un.mas / un.yr,
+                                star_data['pmdec'] * un.mas / un.yr,
+                                star_data['rv'] * un.km / un.s], radec=True)
+            orbit.turn_physical_on()
+            orbit.integrate(time_steps, MWPotential2014)
+            return orbit
+
+        if members:
+            print 'Integrating orbits of cluster members'
+            out_data = np.ndarray((n_ts, n_memb, 3), dtype=np.float64)
+            for i_memb in range(n_memb):
+                orbit_res = _integrate_orbit(self.members[i_memb], ts)
+                out_data[:, i_memb, 0] = orbit_res.x(ts) * 1e3
+                out_data[:, i_memb, 1] = orbit_res.y(ts) * 1e3
+                out_data[:, i_memb, 2] = orbit_res.z(ts) * 1e3
+            self.cluster_memb_pos = out_data
+
+        if particles:
+            print 'Integrating observed interesting stars around cluster'
+            out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
+            for i_part in range(n_part):
+                orbit_res = _integrate_orbit(self.particle[i_part], ts)
+                out_data[:, i_part, 0] = orbit_res.x(ts) * 1e3
+                out_data[:, i_part, 1] = orbit_res.y(ts) * 1e3
+                out_data[:, i_part, 2] = orbit_res.z(ts) * 1e3
+            self.particle_pos = out_data
 
     # --------------------------------------------------
     # ---------- ONLY TESTS BELLOW THIS POINT ----------
     # --------------------------------------------------
-
     def _test_convex_hull(self, idx_time, idx_particle):
         memb_data = self.cluster_memb_pos[idx_time, :, :]
         part_data = self.particle_pos[idx_time, idx_particle, :][0]
