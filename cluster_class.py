@@ -13,8 +13,32 @@ from shapely.geometry import Point, MultiPoint
 from time import time
 from multiprocessing import Pool
 from functools import partial
+from astropy.io import ascii
 np.seterr(invalid='ignore')
 
+
+# -------------------------------
+# other useful functions
+# -------------------------------
+def output_list_objects(data, center, out_cols, out_file):
+    data_temp = deepcopy(data)
+    if len(data_temp) >= 1:
+        # compute distances to cluster center
+        data_temp['ang_dist'] = coord.ICRS(ra=data_temp['ra'] * un.deg,
+                                           dec=data_temp['dec'] * un.deg).separation(center)
+        # output results
+        data_temp[out_cols].write(out_file, format='ascii', comment=False, delimiter='\t', overwrite=True,
+                                      fill_values=[(ascii.masked, 'nan')])
+
+        # add some addtional data
+        txt_out = open(out_file, 'a')
+        txt_out.write(' \n')
+        txt_out.write(','.join([str(sid) for sid in out_cols]))
+        txt_out.close()
+
+# -------------------------------
+# class functions
+# -------------------------------
 
 def _add_galactic_cartesian_data(input_data, reverse=False, gal_coor=True):
     """
@@ -247,6 +271,18 @@ def _func_g_vect_one(loc_vec_one, loc_members, mass_memb, G_const):
     return -1. * np.nansum((G_const * mass_memb * vect_memb / _size_vect(vect_memb) ** 3)[idx_star_use], axis=0)
 
 
+def _integrate_orbit(star_data, time_steps=None):
+    orbit = Orbit(vxvv=[star_data['ra'] * un.deg,
+                        star_data['dec'] * un.deg,
+                        1e3 / star_data['parallax'] * un.pc,
+                        star_data['pmra'] * un.mas / un.yr,
+                        star_data['pmdec'] * un.mas / un.yr,
+                        star_data['rv'] * un.km / un.s], radec=True)
+    orbit.turn_physical_on()
+    orbit.integrate(time_steps, MWPotential2014)
+    return [orbit.x(time_steps) * 1e3, orbit.y(time_steps) * 1e3, orbit.z(time_steps) * 1e3]
+
+
 class CLUSTER:
     """
 
@@ -382,7 +418,7 @@ class CLUSTER:
                 g_vect += (g_pot * loc_vec / _size_vect(loc_vec))  # vector from center of Galaxy
         return g_vect
 
-    def plot_cluster_xyz(self, path=None):
+    def plot_cluster_xyz(self, path=None, min_cross_time=2e6, show_possible=False):
         """
 
         :return:
@@ -390,7 +426,17 @@ class CLUSTER:
         fig, ax = plt.subplots(2, 2, figsize=(10, 10))
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
-        ax = _add_xyz_points(ax, self.members, c='blue', s=3, compute_limits=True)
+        ax = _add_xyz_points(ax, self.members, c='blue', s=4, compute_limits=True)
+        ax[1, 1].scatter(self.members_background['ra'], self.members_background['dec'], lw=0, s=2, c='black')
+        ax[1, 1].scatter(self.members['ra'], self.members['dec'], lw=0, s=4, c='blue')
+        ax[1, 1].set(xlabel='RA', ylabel='DEC')
+        # crossing objects
+        if show_possible and self.final_inside_hull is not None:
+            idx_pos_plot = self.particle['time_in_cluster'] >= min_cross_time / 1e6
+            if np.sum(idx_pos_plot) > 0:
+                ax = _add_xyz_points(ax, self.particle[idx_pos_plot], c='red', s=4, compute_limits=False)
+                ax[1, 1].scatter(self.particle['ra'][idx_pos_plot], self.particle['dec'][idx_pos_plot], lw=0, s=4, c='red')
+        # plot cosmetics
         plt.suptitle('Cluster: ' + self.id)
         plt.tight_layout()
         plt.subplots_adjust(left=0.03, bottom=0.03, right=0.98, top=0.96, wspace=0.15, hspace=0.1)
@@ -555,6 +601,7 @@ class CLUSTER:
                 delanuay_surf = Delaunay(self.cluster_memb_pos[i_s, :, :][idx_hull_vert])
                 inside_hull = delanuay_surf.find_simplex(self.particle_pos[i_s, :, :]) >= 0
                 self.final_inside_hull[i_s, :] = np.array(inside_hull)
+        self.particle['time_in_cluster'] = np.sum(self.final_inside_hull, axis=0) * np.abs(self.step_years) / 1e6
 
     def get_crossing_objects(self, min_time=None):
         """
@@ -683,36 +730,34 @@ class CLUSTER:
         n_ts = np.abs(np.int64(total_time/step_years))
         ts = np.linspace(0., total_time/1e6, n_ts) * un.Myr
 
-        def _integrate_orbit(star_data, time_steps):
-            orbit = Orbit(vxvv=[star_data['ra'] * un.deg,
-                                star_data['dec'] * un.deg,
-                                1e3 / star_data['parallax'] * un.pc,
-                                star_data['pmra'] * un.mas / un.yr,
-                                star_data['pmdec'] * un.mas / un.yr,
-                                star_data['rv'] * un.km / un.s], radec=True)
-            orbit.turn_physical_on()
-            orbit.integrate(time_steps, MWPotential2014)
-            return orbit
-
         if members:
             print 'Integrating orbits of cluster members'
             out_data = np.ndarray((n_ts, n_memb, 3), dtype=np.float64)
             for i_memb in range(n_memb):
-                orbit_res = _integrate_orbit(self.members[i_memb], ts)
-                out_data[:, i_memb, 0] = orbit_res.x(ts) * 1e3
-                out_data[:, i_memb, 1] = orbit_res.y(ts) * 1e3
-                out_data[:, i_memb, 2] = orbit_res.z(ts) * 1e3
+                orbit_res_x, orbit_res_y, orbit_res_z = _integrate_orbit(self.members[i_memb], ts)
+                out_data[:, i_memb, 0] = orbit_res_x  # orbit_res.x(ts) * 1e3
+                out_data[:, i_memb, 1] = orbit_res_y  # orbit_res.y(ts) * 1e3
+                out_data[:, i_memb, 2] = orbit_res_z  # orbit_res.z(ts) * 1e3
             self.cluster_memb_pos = out_data
 
         if particles:
             print 'Integrating observed interesting stars around cluster'
+            pool = Pool(processes=15)  # greatest speedup with 2 processes
+            _integrate_orbit_partial = partial(_integrate_orbit, time_steps=ts)
+            orbits_res_all = pool.map(_integrate_orbit_partial, self.particle)
+            pool.close()
+            print '  Multi finished'
+
             out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
             for i_part in range(n_part):
-                orbit_res = _integrate_orbit(self.particle[i_part], ts)
-                out_data[:, i_part, 0] = orbit_res.x(ts) * 1e3
-                out_data[:, i_part, 1] = orbit_res.y(ts) * 1e3
-                out_data[:, i_part, 2] = orbit_res.z(ts) * 1e3
+                orbit_res = orbits_res_all[i_part]
+                # orbit_res = _integrate_orbit(self.particle[i_part], ts)
+                out_data[:, i_part, 0] = orbit_res[0]  # orbit_res.x(ts) * 1e3
+                out_data[:, i_part, 1] = orbit_res[1]  # orbit_res.y(ts) * 1e3
+                out_data[:, i_part, 2] = orbit_res[2]  # orbit_res.z(ts) * 1e3
             self.particle_pos = out_data
+
+        print 'Integration finished'
 
     # --------------------------------------------------
     # ---------- ONLY TESTS BELLOW THIS POINT ----------

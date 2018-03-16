@@ -4,12 +4,11 @@ from astropy.table import Table
 from isochrones_class import *
 from cluster_class import *
 from abundances_analysis import *
-from galpy.potential import MWPotential2014, LogarithmicHaloPotential, IsochronePotential, MWPotential
+from galpy.potential import MWPotential2014
 from galpy.orbit import Orbit
-from galpy.actionAngle import actionAngleStaeckel, actionAngleAdiabatic, estimateDeltaStaeckel, actionAngleSpherical
 
 RV_USE = True
-RV_ONLY = True
+RV_ONLY = False
 NO_INTERACTIONS = False
 REVERSE_VEL = True
 GALAXY_POTENTIAL = True
@@ -19,7 +18,7 @@ data_dir = '/home/klemen/data4_mount/'
 clusters = Table.read(data_dir+'clusters/Kharchenko_2013/catalog.csv')
 # read Tgas data set
 if RV_USE:
-    gaia_data = Table.read(data_dir + 'TGAS_data_set/TgasSource_all_with_rv.fits')
+    gaia_data = Table.read(data_dir + 'TGAS_data_set/TgasSource_all_with_rv_feh.fits')
     if RV_ONLY:
         gaia_data = gaia_data[np.logical_and(gaia_data['rv'] != 0, gaia_data['e_rv'] != 0)]
 else:
@@ -36,6 +35,9 @@ gaia_ra_dec = coord.ICRS(ra=gaia_data['ra'] * un.deg,
 
 selected_clusters = ['Alessi_13', 'ASCC_18', 'ASCC_20', 'Blanco_1', 'Collinder_65', 'Collinder_70', 'Melotte_20',
                      'Melotte_22', 'NGC_1039', 'NGC_2168', 'Platais_3', 'Platais_5', 'Stock_2']
+
+os.chdir('Khar_cluster_initial')
+
 # iterate over preselected clusters
 for obs_cluster in ['Melotte_22']:  # selected_clusters:
     print 'Working on:', obs_cluster
