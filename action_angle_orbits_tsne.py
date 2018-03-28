@@ -20,11 +20,11 @@ orig_cols = ['ra', 'dec', 'pmra', 'pmdec', 'parsec']
 
 COMPUTE_TSNE = True         # Step 1 - create tsne projection
 EXOPLORE_RESULTS = False     # Step 2 - manual browsing the projection
-AUTOMATIC_ANALYSIS = True  # Step 3 - automatic analysis of projection and its overdenseties
+AUTOMATIC_ANALYSIS = False  # Step 3 - automatic analysis of projection and its overdenseties
 
-perp = 4
+perp = 40
 theta = 0.5
-n_cpu_tsne = 30
+n_cpu_tsne = 10
 n_cpu_dbscan = 20
 
 galah_dir = '/home/klemen/data4_mount/'
@@ -33,6 +33,8 @@ gaia_data_all = Table.read(data_dir + 'TgasSource_all_with_rv_feh.fits')
 idx_gaia_use = np.logical_and(gaia_data_all['parallax'] > 0,     # positive parallaxes
                               1e3/gaia_data_all['parallax'] <= 750)  # inside a defined radius
 source_id_use = gaia_data_all['source_id'][idx_gaia_use]
+# compute gaia stars positions
+gaia_data_all_pos = get_cartesian_coords(gaia_data_all['ra', 'dec', 'parallax'])
 
 # # original Gaia data
 # file_in = 'TgasSource_all_with_rv_feh.fits'
@@ -57,7 +59,7 @@ if 'parallax' in data.colnames:
 data = data[np.in1d(data['source_id'], source_id_use)]
 
 # final destination of outputs
-suffix += '_per{:2.0f}_th{:0.2}'.format(perp, theta)
+suffix += '_per{:02.0f}_th{:0.2}'.format(perp, theta)
 move_to_dir('ORBITS_tsne_projections')
 move_to_dir(suffix)
 file_out = file_in[:-5]
@@ -185,7 +187,7 @@ if AUTOMATIC_ANALYSIS:
 
     # for esp_val in np.arange(0.04, 0.25, 0.02):
 
-    esp_val = 0.04
+    esp_val = 0.06
     db_labels = DBSCAN(eps=esp_val, min_samples=10, n_jobs=n_cpu_dbscan).fit_predict(tsne_data['tsne_axis_1', 'tsne_axis_2'].to_pandas().values)
 
     idx_plot = db_labels >= 0
@@ -199,7 +201,7 @@ if AUTOMATIC_ANALYSIS:
 
     # analyse every labeled cluster on its own
     min_obj_label = 5
-    max_obj_label = 100
+    max_obj_label = 75
     u_labels = np.unique(db_labels[db_labels >= 0])
     for label in u_labels:
         idx_obj_sel = (db_labels == label)
@@ -215,6 +217,7 @@ if AUTOMATIC_ANALYSIS:
 
         # subset of Gaia data
         gaia_data_selected = gaia_data_all[np.in1d(gaia_data_all['source_id'], selected_source_ids)]
+        gaia_data_selected_pos = get_cartesian_coords(gaia_data_selected['ra', 'dec', 'parallax'])
 
         plt.scatter(gaia_data_selected['ra'], gaia_data_selected['dec'], lw=0, s=5, c='black')
         plt.xlabel('RA')
@@ -227,6 +230,22 @@ if AUTOMATIC_ANALYSIS:
         csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'feh', 'phot_g_mean_mag']
         gaia_data_selected[csv_out_cols].write(csv_out_file, format='ascii', comment=False, delimiter='\t',
                                                overwrite=True, fill_values=[(ascii.masked, 'nan')])
+
+        # define any possible objects thar are captured within the volume of selected set
+        idx_all_inside = get_objects_inside_selection(gaia_data_selected_pos, gaia_data_all_pos)
+        idx_all_inside = idx_all_inside[np.in1d(gaia_data_all[idx_all_inside]['source_id'], gaia_data_selected['source_id'], invert=True)]
+        gaia_data_all_inside = gaia_data_all[idx_all_inside]
+        inside_source_ids = gaia_data_all_inside['source_id']
+
+        # output 3d plot of positions
+        plot_3D_pos(gaia_data_selected_pos, gaia_data_all_pos[idx_all_inside], path=prefix+'_1_pos3D.png')
+
+        # output velocities histograms
+        plt_vel_distr(gaia_data_selected, other_data=gaia_data_all_inside, path=prefix+'_1_vel.png')
+
+        # output tsne plot of the selected/inside data
+        plot_tsne_sel(tsne_data, sel=selected_source_ids, ins=inside_source_ids, path=prefix+'_0_tsne.png')
+
         # add some additional data
         txt_out = open(csv_out_file, 'a')
         txt_out.write(' \n')
@@ -234,11 +253,12 @@ if AUTOMATIC_ANALYSIS:
         txt_out.close()
 
         # output analysis plots - orbits
-        plot_orbits(gaia_data_selected, path=prefix+'_2_orbits.png')
+        plot_orbits(gaia_data_selected, other_data=gaia_data_all_inside, path=prefix + '_2_orbits.png')
 
         # output analysis plots - abundances
-        idx_use = np.in1d(match_data['source_id'], selected_source_ids)
-        if np.sum(idx_use) > 0:
-            selected_sobject_ids = match_data['sobject_id'][idx_use]
-            cannon_data_sel = cannon_data[np.in1d(cannon_data['sobject_id'], selected_sobject_ids)]
-            plot_abundances_histograms(cannon_data_sel, other_data=None, use_flag=True, path=prefix+'_3_abund.png')
+        sobj_galah_sel = match_data[np.in1d(match_data['source_id'], selected_source_ids)]['sobject_id']
+        sobj_galah_inside = match_data[np.in1d(match_data['source_id'], inside_source_ids)]['sobject_id']
+        if len(sobj_galah_sel) > 0:
+            cannon_data_sel = cannon_data[np.in1d(cannon_data['sobject_id'], sobj_galah_sel)]
+            cannon_data_inside = cannon_data[np.in1d(cannon_data['sobject_id'], sobj_galah_inside)]
+            plot_abundances_histograms(cannon_data_sel, other_data=cannon_data_inside, use_flag=True, path=prefix+'_3_abund.png')
