@@ -11,7 +11,7 @@ from sklearn import mixture
 from matplotlib.colors import LogNorm
 
 # step 1 of the analysis
-MEMBER_DETECTION = True
+MEMBER_DETECTION = False
 
 # step 2 of the analysis
 RV_USE = True
@@ -54,8 +54,9 @@ os.chdir('Khar_cluster_initial_all')
 
 if MEMBER_DETECTION:
     out_dir_suffix = '_member_sel'
-    # iterate over preselected clusters
     cluster_obj_found_out = Table(names=('source_id', 'cluster'), dtype=('int64', 'S30'))
+
+    # iterate over (pre)selected clusters
     for obs_cluster in np.unique(clusters['Cluster']):
     # for obs_cluster in selected_clusters:
         print 'Working on:', obs_cluster
@@ -74,8 +75,9 @@ if MEMBER_DETECTION:
         idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 250  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
 
-        if len(idx_possible_r2) < 50:
-            print ' Not enough objects in selection ('+str(len(idx_possible_r2))+')'
+        n_in_selection = len(gaia_cluster_sub_r2)
+        if n_in_selection < 50:
+            print ' Not enough objects in selection ('+str(n_in_selection)+')'
             continue
 
         if not os.path.isdir(out_dir):
@@ -106,7 +108,11 @@ if MEMBER_DETECTION:
 
     # save cluster results
     cluster_obj_found_out.write(cluster_fits_out, format='fits', overwrite=True)
+    # save only ra/dec information for determined objects
+    gaia_data[np.in1d(gaia_data['source_id'], cluster_obj_found_out['source_id'])]['source_id', 'ra', 'dec'].write(cluster_fits_out[:-5]+'_pos.fits', format='fits', overwrite=True)
 
+
+clusters = Table.read(cluster_fits_out)
 
 # ------------------------------------------
 # ----------------  STEP 2  ----------------

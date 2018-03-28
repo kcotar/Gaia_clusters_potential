@@ -4,11 +4,19 @@ import numpy as np
 from astropy.table import Table, vstack
 import matplotlib.pyplot as plt
 
-data_dir = '/home/klemen/data4_mount/isochrones/padova/'
+# DATASET 1
+# data_dir = '/home/klemen/data4_mount/isochrones/padova_Gaia/'
+# orig_colnames = ['Zini','Age','Mini','Mass','logL','logTe','logg','label','McoreTP','C_O','period0','period1','pmode','Mloss','tau1m','X','Y','Xc','Xn','Xo','Cexcess','Z','mbolmag','Gmag','G_BPmag','G_RPmag']
+# get_cols = ['Zini','Age','Mini','Mass','logL','logTe','logg','Z','mbolmag','Gmag','G_BPmag','G_RPmag']
+
+# DATASET 2
+data_dir = '/home/klemen/data4_mount/isochrones/padova_UBVRIJHK/'
+orig_colnames = ['Zini','Age','Mini','Mass','logL','logTe','logg','label','McoreTP','C_O','period0','period1','pmode','Mloss','tau1m','X','Y','Xc','Xn','Xo','Cexcess','Z','mbolmag','Umag','Bmag','Vmag','Rmag','Imag','Jmag','Hmag','Kmag']
+get_cols = ['Zini','Age','Mini','Mass','logL','logTe','logg','Z','mbolmag','Umag','Bmag','Vmag','Rmag','Imag','Jmag','Hmag','Kmag']
+
 chdir(data_dir)
 
 Z_0 = 0.0152
-orig_colnames = ['Zini','Age','Mini','Mass','logL','logTe','logg','label','McoreTP','C_O','period0','period1','pmode','Mloss','tau1m','X','Y','Xc','Xn','Xo','Cexcess','Z','mbolmag','Gmag','G_BPmag','G_RPmag']
 dat_files = glob('output*.dat')
 
 dat_data_all = list()
@@ -18,7 +26,7 @@ for dat in dat_files:
     data_colnames = data.colnames
     for i_col in range(len(data_colnames)):
         data[data_colnames[i_col]].name = orig_colnames[i_col]
-    dat_data_all.append(data['Zini','Age','Mini','Mass','logL','logTe','logg','Z','mbolmag','Gmag','G_BPmag','G_RPmag'])
+    dat_data_all.append(data[get_cols])
     # idx = data['Age'] == 10000000
     # plt.scatter(data['logTe'][idx], data['logg'][idx], lw=0, s=2)
     # plt.show()

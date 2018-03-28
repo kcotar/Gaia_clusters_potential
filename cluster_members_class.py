@@ -13,6 +13,7 @@ from scipy.spatial import ConvexHull, Delaunay
 # other useful functions
 # -------------------------------
 
+
 # -------------------------------
 # class functions
 # -------------------------------
@@ -196,7 +197,8 @@ class CLUSTER_MEMBERS:
             return False
 
         # else do the selection based on distance distribution
-        idx_bad_dist = np.abs(data_c['parsec'] - cluster_pc_medi) > 1.5 * cluster_pc_std
+        std_multi_thr = 1.
+        idx_bad_dist = np.abs(data_c['parsec'] - cluster_pc_medi) > std_multi_thr * cluster_pc_std
         n_nbad = np.sum(idx_bad_dist)
 
         print ' Inside dist:', np.std(data_c['parsec'][~idx_bad_dist])
@@ -216,6 +218,11 @@ class CLUSTER_MEMBERS:
     def include_iniside_hull(self, distance_limits=True):
         idx_c = self.get_cluster_members()
         data_c = self.data[idx_c]
+
+        if len(data_c) < 3:
+            print ' Not enough points to construct a hull'
+            return False
+
         min_dist = np.min(data_c['parsec'])
         max_dist = np.max(data_c['parsec'])
 
@@ -235,6 +242,7 @@ class CLUSTER_MEMBERS:
         # update results
         print ' New objects inside hull:', n_af-n_bf
         self.selected_final = deepcopy(idx_inside_hull)
+        return True
 
     def plot_on_sky(self, path='plot.png', mark_objects=False):
         plt.scatter(self.data['ra'], self.data['dec'], lw=0, s=2, c='black', alpha=1.)
