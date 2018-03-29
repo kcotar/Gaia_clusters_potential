@@ -33,7 +33,7 @@ cannon_data = Table.read(data_dir+'sobject_iraf_iDR2_180108_cannon.fits')
 gaia_galah_xmatch = Table.read(data_dir+'galah_tgas_xmatch_20171111.csv')['sobject_id', 'source_id']
 
 # load isochrones into class
-iso = ISOCHRONES(data_dir+'isochrones/padova/isochrones_all.fits')
+iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits')
 
 gaia_ra_dec = coord.ICRS(ra=gaia_data['ra'] * un.deg,
                          dec=gaia_data['dec'] * un.deg,

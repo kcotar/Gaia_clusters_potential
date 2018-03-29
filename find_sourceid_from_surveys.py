@@ -6,12 +6,12 @@ data_dir = '/home/klemen/data4_mount/'
 # add RV velocities from Galah and Rave
 data_rave = Table.read(data_dir+'RAVE_DR5.fits')
 data_galah = Table.read(data_dir+'sobject_iraf_53_reduced_20180222.fits')
-data_cannon = Table.read(data_dir+'sobject_iraf_iDR2_180108_cannon.fits')
+# data_cannon = Table.read(data_dir+'sobject_iraf_iDR2_180108_cannon.fits')
 # xmatch of surveys with gaia
 xmatch_rave = Table.read(data_dir+'rave_tgas_xmatch_DR5.csv')
 xmatch_galah = Table.read(data_dir+'galah_tgas_xmatch_20180222.csv')
 
-source_ids_find = [2326921471751885440]
+source_ids_find = [5537152720827333120,5538660357428319360]
 
 for s_id in source_ids_find:
     print s_id

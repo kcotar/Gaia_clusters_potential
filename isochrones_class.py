@@ -1,5 +1,6 @@
 import numpy as np
 from astropy.table import Table
+from copy import deepcopy
 
 
 class ISOCHRONES():
@@ -7,15 +8,17 @@ class ISOCHRONES():
 
     """
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, photo_system='UBVRIJHK'):
         """
 
-        :param file_path: path to fits file with Padova isochrones data
+        :param file_path:
+        :param photo_system: Can be UBVRIJHK or Gaia
         """
         self.data_all = Table.read(file_path)
         self.isochrone_meh = None
         self.isochrone_age = None
         self.isochrone_data = None
+        self.system = photo_system
 
     def _is_isochrone_selected(self):
         """
@@ -40,6 +43,7 @@ class ISOCHRONES():
 
         self.isochrone_data = self.data_all[np.logical_and(self.data_all['MHini'] == self.isochrone_meh,
                                                            self.data_all['Age'] == self.isochrone_age)]
+        self.isochrone_data['Mloss'] = self.isochrone_data['Mini'] - self.isochrone_data['Mass']
 
     def detemine_stellar_mass(self, parsec_dist, teff=None, logg=None,
                               gmag=None, gbpmag=None, grpmag=None):
@@ -69,3 +73,32 @@ class ISOCHRONES():
         # print self.isochrone_data['Mass'][idx_iso]
         mass = self.isochrone_data['Mass'][idx_iso[0]] - d_frac * (self.isochrone_data['Mass'][idx_iso[0]] - self.isochrone_data['Mass'][idx_iso[1]])
         return mass
+
+    def get_hr_magnitudes_data(self, max_Mini=None, max_Mloss=None, cluster_dist=100):
+        """
+
+        :param max_Mini: in solar mass
+        :param max_Mloss: in solar mass
+        :param cluster_dist: in parsecs
+        :return:
+        """
+
+        isochrone_data_sub = deepcopy(self.isochrone_data)
+
+        # select the maximum initial stellar mas
+        if max_Mini is not None:
+            isochrone_data_sub = isochrone_data_sub[isochrone_data_sub['Mini'] < max_Mini]
+
+        # select the maximum stellar mas loss
+        if max_Mloss is not None:
+            isochrone_data_sub = isochrone_data_sub[isochrone_data_sub['Mloss'] < max_Mloss]
+
+        # correct magnitudes for cluster distance as the are give in absolute mag (@10pc) in isochrone
+        if self.system == 'UBVRIJHK':
+            b_mag = isochrone_data_sub['Bmag'] + 2.5*np.log10((cluster_dist/10.)**2)
+            v_mag = isochrone_data_sub['Vmag'] + 2.5*np.log10((cluster_dist/10.)**2)
+            x_data = b_mag - v_mag
+            y_data = v_mag
+
+        return x_data, y_data
+
