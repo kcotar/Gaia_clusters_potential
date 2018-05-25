@@ -99,6 +99,9 @@ class ISOCHRONES():
             v_mag = isochrone_data_sub['Vmag'] + 2.5*np.log10((cluster_dist/10.)**2)
             x_data = b_mag - v_mag
             y_data = v_mag
+        elif self.system == 'Gaia':
+            x_data = isochrone_data_sub['G_BPmag'] - isochrone_data_sub['G_RPmag']
+            y_data = isochrone_data_sub['Gmag'] + 2.5 * np.log10((cluster_dist / 10.) ** 2)
 
         return x_data, y_data
 
