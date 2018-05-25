@@ -24,8 +24,11 @@ def output_list_objects(data, center, out_cols, out_file):
     data_temp = deepcopy(data)
     if len(data_temp) >= 1:
         # compute distances to cluster center
-        data_temp['ang_dist'] = coord.ICRS(ra=data_temp['ra'] * un.deg,
-                                           dec=data_temp['dec'] * un.deg).separation(center)
+        data_ra_dec = coord.ICRS(ra=data_temp['ra'] * un.deg,
+                                 dec=data_temp['dec'] * un.deg,
+                                 distance=1e3/data_temp['parallax'] * un.pc)
+        data_temp['ang_dist'] = data_ra_dec.separation(center)
+        data_temp['3d_dist'] = data_ra_dec.separation_3d(center)
         # output results
         data_temp[out_cols].write(out_file, format='ascii', comment=False, delimiter='\t', overwrite=True,
                                       fill_values=[(ascii.masked, 'nan')])
@@ -742,16 +745,18 @@ class CLUSTER:
 
         if particles:
             print 'Integrating observed interesting stars around cluster'
-            pool = Pool(processes=15)  # greatest speedup with 2 processes
-            _integrate_orbit_partial = partial(_integrate_orbit, time_steps=ts)
-            orbits_res_all = pool.map(_integrate_orbit_partial, self.particle)
-            pool.close()
-            print '  Multi finished'
+            # pool = Pool(processes=2)  # greatest speedup with 2 processes
+            # _integrate_orbit_partial = partial(_integrate_orbit, time_steps=ts)
+            # orbits_res_all = pool.map(_integrate_orbit_partial, self.particle)
+            # pool.close()
+            # print '  Multi finished'
 
             out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
             for i_part in range(n_part):
-                orbit_res = orbits_res_all[i_part]
-                # orbit_res = _integrate_orbit(self.particle[i_part], ts)
+                if i_part % 100 == 0:
+                    print '  ', i_part
+                # orbit_res = orbits_res_all[i_part]
+                orbit_res = _integrate_orbit(self.particle[i_part], ts)
                 out_data[:, i_part, 0] = orbit_res[0]  # orbit_res.x(ts) * 1e3
                 out_data[:, i_part, 1] = orbit_res[1]  # orbit_res.y(ts) * 1e3
                 out_data[:, i_part, 2] = orbit_res[2]  # orbit_res.z(ts) * 1e3

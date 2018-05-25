@@ -8,7 +8,7 @@ tgas_all = list()
 for i_t in range(0, 16):
     print i_t
     fits = 'TgasSource_000-000-0{:02.0f}.fits'.format(i_t)
-    data = Table.read(data_tgas + fits)['source_id', 'ra', 'ra_error', 'dec', 'dec_error', 'parallax', 'parallax_error', 'pmra', 'pmra_error', 'pmdec', 'pmdec_error', 'phot_g_mean_mag', 'phot_variable_flag']
+    data = Table.read(data_tgas + fits)['source_id', 'hip', 'tycho2_id', 'ra', 'ra_error', 'dec', 'dec_error', 'parallax', 'parallax_error', 'pmra', 'pmra_error', 'pmdec', 'pmdec_error', 'phot_g_mean_mag', 'phot_variable_flag']
     tgas_all.append(data)
 
 tgas_all = vstack(tgas_all)
