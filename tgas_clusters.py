@@ -58,23 +58,21 @@ gaia_galah_xmatch = Table.read(data_dir+'galah_tgas_xmatch_20171111.csv')['sobje
 # load isochrones into class
 iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
 
-selected_clusters_Asiago = ['NGC_2264', 'NGC_2281', 'NGC_2301', 'ASCC_29', 'ASCC_30', 'ASCC_31', 'ASCC_34',
-                            'ASCC_35', 'ASCC_38', 'ASCC_41', 'NGC_2548', 'NGC_2632', 'NGC_2682',
+selected_clusters_Asiago = ['NGC_2264', 'NGC_2281', 'NGC_2301', 'NGC_2548', 'NGC_2632', 'NGC_2682',
                             'Melotte_111', 'Mamajek_2', 'IC_4665', 'Collinder_350', 'Collinder_359',
                             'NGC_6633', 'IC_4756', 'Stephenson_1',
-                            'NGC_6738', 'ASCC_100', 'ASCC_101', 'NGC_6793', 'Stock_1', 'ASCC_103',
-                            'ASCC_104', 'ASCC_105', 'ASCC_106', 'Turner_9', 'Roslund_1', 'ASCC_107',
-                            'NGC_6828', 'ASCC_109', 'ASCC_110', 'Roslund_5', 'NGC_6882',
-                            'ASCC_112', 'Roslund_6',
+                            'NGC_6738', 'NGC_6793', 'Stock_1',
+                            'Turner_9', 'Roslund_1',
+                            'NGC_6828', 'Roslund_5', 'NGC_6882',
+                            'Roslund_6',
                             'NGC_6940', 'FSR_0251', 'Alessi_12', 'Roslund_7', 'FSR_0261',
-                            'NGC_6991A', 'NGC_6997', 'ASCC_113', 'Basel_15', 'NGC_7058',
-                            'NGC_7063', 'NGC_7092', 'IC_1396', 'ASCC_114', 'IC_5146', 'NGC_7160', 'ASCC_115',
-                            'NGC_7243', 'ASCC_122', 'Teutsch_39', 'ASCC_123', 'ASCC_124',
-                            'ASCC_125', 'ASCC_127']
+                            'NGC_6991A', 'NGC_6997', 'Basel_15', 'NGC_7058',
+                            'NGC_7063', 'NGC_7092', 'IC_1396', 'IC_5146', 'NGC_7160',
+                            'NGC_7243', 'Teutsch_39']
 
 cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
 
-output_dir = 'Khar_cluster_initial_Gaia_DR2_alldata_best_200pc'
+output_dir = 'Khar_cluster_initial_Gaia_DR2_allinr2'
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 
@@ -90,8 +88,8 @@ if MEMBER_DETECTION:
 
     # iterate over (pre)selected clusters
     # for obs_cluster in np.unique(clusters['Cluster']):
-    # for obs_cluster in selected_clusters_Asiago:
-    for obs_cluster in ['NGC_7092']:
+    for obs_cluster in selected_clusters_Asiago:
+    # for obs_cluster in ['NGC_2264']:
         print 'Working on:', obs_cluster
 
         out_dir = obs_cluster + out_dir_suffix
@@ -115,7 +113,7 @@ if MEMBER_DETECTION:
                 print ' Sending QUERY to download Gaia data'
                 gaia_data = get_data_subset(clust_data['RAdeg'].data[0], clust_data['DEdeg'].data[0],
                                             clust_data['r2'].data[0] * 1.25,
-                                            clust_data['d'].data[0], 200)
+                                            clust_data['d'].data[0], dist_span=None)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -137,9 +135,19 @@ if MEMBER_DETECTION:
 
         find_members_class = CLUSTER_MEMBERS(gaia_cluster_sub_r2, clust_data)
         find_members_class.plot_on_sky(path='cluster_pos.png', mark_objects=False)
+
+        # first determine new cluster center in pm space if needed
+        # find_members_class.determine_cluster_center()
+
         print ' Multi radius Gaussian mixture'
-        for c_rad in np.linspace(0, np.float64(clust_data['r2']), 16)[1:]:
-            find_members_class.perform_selection(c_rad, bayesian_mixture=False, covarinace='diag')
+        pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
+        for c_rad in np.linspace(np.float64(clust_data['r1']), np.float64(clust_data['r2']), 3):
+            find_members_class.perform_selection_density(c_rad, pm_median_all, suffix='_{:.3f}'.format(c_rad))
+            # find_members_class.perform_selection(c_rad, bayesian_mixture=False, covarinace='full', max_com=4)
+        # !!!!!!! TEMP !!!!!!!
+        os.chdir('..')
+        continue
+
         find_members_class.plot_members(25, path='cluster_pm_multi_sel.png')
         find_members_class.plot_members(25, path='cluster_pm_multi_n.png', show_n_sel=True)
         find_members_class.plot_selected_hist(path='selection_hist.png')

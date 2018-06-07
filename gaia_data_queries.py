@@ -1,9 +1,13 @@
 from astroquery.gaia import Gaia
 
 
-def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span):
-    max_parallax = 1e3/(max(dist-dist_span, 1.))
-    min_parallax = 1e3/(dist+dist_span)
+def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span=None):
+    if dist_span is not None:
+        max_parallax = 1e3/(max(dist-dist_span, 1.))
+        min_parallax = 1e3/(dist+dist_span)
+    else:
+        min_parallax = -1
+        max_parallax = 100
     gaia_query = "SELECT source_id,ra,dec,parallax,parallax_error,pmra,pmra_error,pmdec,pmdec_error,phot_g_mean_mag,phot_bp_mean_mag,phot_rp_mean_mag,radial_velocity,radial_velocity_error,phot_variable_flag,a_g_val " +\
                  "FROM gaiadr2.gaia_source " +\
                  "WHERE parallax >= {:.4f} AND parallax <= {:.4f} ".format(min_parallax, max_parallax) +\

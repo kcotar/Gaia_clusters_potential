@@ -23,4 +23,3 @@ for dl_url in list_dl_url:
     if 'csv.gz' in href_url:
         print 'Downloading: '+href_url.split('/')[-1]
         os.system('wget '+source_url+href_url)
-        
