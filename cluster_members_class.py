@@ -52,11 +52,19 @@ class CLUSTER_MEMBERS:
         self.parsec_lim = (np.percentile(self.data['parsec'], 1), np.percentile(self.data['parsec'], 99))
 
         # results holders
+        self.cluster_g2d_params = None
         self.selected_final = None
         self.selected = np.zeros(len(self.data))
         self.n_runs = 0
 
-    def perform_selection_density(self, rad, back_pm, suffix=''):
+    def perform_selection_density(self, rad, suffix='', n_runs=1):
+        """
+
+        :param rad:
+        :param suffix:
+        :param n_runs:
+        :return:
+        """
         print ' Density analysis of pm space'
         idx_sel = self.data['center_sep'] <= rad
         data_cur = self.data[idx_sel]
@@ -66,102 +74,126 @@ class CLUSTER_MEMBERS:
             print ' Not enough data points in selected radius'
             return
 
-        pm_plane = np.vstack((data_cur['pmra'].data, data_cur['pmdec'].data)).T
-        stars_density = KernelDensity(bandwidth=1, kernel='epanechnikov').fit(pm_plane)
-        d_xy = 0.02
-        x_range = np.percentile(pm_plane[:,0], [1., 99.])
-        y_range = np.percentile(pm_plane[:,1], [1., 99.])
+        pm_plane_orig = np.vstack((data_cur['pmra'].data, data_cur['pmdec'].data)).T
+        pm_plane_errors = np.vstack((data_cur['pmra_error'].data, data_cur['pmra_error'].data)).T
+        # determine ranges to remove outlying data points
+        x_range = np.percentile(pm_plane_orig[:, 0], [2., 98.])
+        y_range = np.percentile(pm_plane_orig[:, 1], [2., 98.])
+        d_xy = 0.05
+        if (x_range[1]-x_range[0])/d_xy > 2e3 or (y_range[1]-y_range[0])/d_xy > 2e3:
+            # to reduce processing time in the case of large x or y axis range
+            d_xy = 0.1
+        print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
 
-        grid_pos_x = np.arange(x_range[0], x_range[1], d_xy)
-        grid_pos_y = np.arange(y_range[0], y_range[1], d_xy)
-        _x, _y = np.meshgrid(grid_pos_x, grid_pos_y)
+        final_list_g2d_params = list([])
+        for i_run in np.arange(n_runs)+1:
+            print ' Creating new random pm plane based on observations'
+            pm_plane = list([])
+            for i_pm in range(pm_plane_orig.shape[0]):
+                pm_plane.append([np.random.normal(pm_plane_orig[i_pm, 0], pm_plane_errors[i_pm, 0]),
+                                 np.random.normal(pm_plane_orig[i_pm, 1], pm_plane_errors[i_pm, 1])])
+            pm_plane = np.array(pm_plane)
 
-        def fit_2d_gaussians(image, peaks, fixed=False, pm_xy=True):
-            # create and remove pm model for stars in background
-            n_peaks = peaks.shape[0]
-            field_model = models.Const2D()
-            for i_p in range(n_peaks):
-                if not pm_xy:
-                    # convert from image coordinate to pm
-                    x_m = peaks[i_p, 1]*d_xy+x_range[0]
-                    y_m = peaks[i_p, 0]*d_xy+y_range[0]
-                    x_i = peaks[i_p, 0]
-                    y_i = peaks[i_p, 1]
+            grid_pos_x = np.arange(x_range[0], x_range[1], d_xy)
+            grid_pos_y = np.arange(y_range[0], y_range[1], d_xy)
+            print '  Grid points:', len(grid_pos_x), len(grid_pos_y)
+            _x, _y = np.meshgrid(grid_pos_x, grid_pos_y)
+
+            print 'Computing density field'
+            stars_density = KernelDensity(bandwidth=1, kernel='epanechnikov').fit(pm_plane)
+            density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
+            # density_field += np.log(pm_plane.shape[0])
+            density_field = np.exp(density_field).reshape(_x.shape) * 1e3  # scale the field for easier use
+
+            # find and evaluate peaks if needed
+            peak_coord_init = peak_local_max(density_field, min_distance=int(1. / d_xy), num_peaks=4)
+            ceter_pm_img_x = (self.pm_center[0] - x_range[0]) / d_xy
+            ceter_pm_img_y = (self.pm_center[1] - y_range[0]) / d_xy
+
+            # prepare peak coordinates and peak values
+            lm_peak = list([])
+            lm_peak_val = list([])
+            for i_p in range(peak_coord_init.shape[0]):
+                lm_peak.append([peak_coord_init[i_p, 1] * d_xy + x_range[0], peak_coord_init[i_p, 0] * d_xy + y_range[0]])  # convert to pm values
+                lm_peak_val.append(density_field[peak_coord_init[i_p, 0], peak_coord_init[i_p, 1]])
+            density_field_background, multi_gauss2d_res = fit_multi_gaussian2d(density_field, _x, _y,
+                                                                               np.array(lm_peak), np.array(lm_peak_val),
+                                                                               vary_position=True)
+
+            # remove the background
+            density_field_new = density_field - density_field_background
+
+            # extract new peak centers end evaluate results
+            final_peaks_pm = list([])
+            for i_p in range(peak_coord_init.shape[0]):
+                final_peaks_pm.append([multi_gauss2d_res['x'+str(i_p)].value, multi_gauss2d_res['y'+str(i_p)].value])
+            final_peaks_pm = np.array(final_peaks_pm)
+            final_peaks_pm_dist = np.sqrt((final_peaks_pm[:,0]-self.pm_center[0])**2 + (final_peaks_pm[:,1]-self.pm_center[1])**2)
+            # evaluate the closest peak(s)
+            idx_peak_close = np.where(final_peaks_pm_dist < 5.)[0]  # TODO: determine pm distance for close pairs
+            n_peak_close = len(idx_peak_close)
+            idx_peak_closest = np.argmin(final_peaks_pm_dist)
+            print '  Number of close peaks detected: ', n_peak_close
+            if n_peak_close > 1:
+                # TODO: select appropriate peak from multiple possible
+                # select narrower peak, with smaller xs and ys
+                # amp can be smaller or larger depending on the stellar densities, but still above the noise
+                amp_vals = np.array([multi_gauss2d_res['amp' + str(i_p_c)].value for i_p_c in idx_peak_close])
+                xs_vals = np.array([multi_gauss2d_res['xs' + str(i_p_c)].value for i_p_c in idx_peak_close])
+                ys_vals = np.array([multi_gauss2d_res['ys' + str(i_p_c)].value for i_p_c in idx_peak_close])
+                # apply thresholds
+                idx_xs_min = np.argmin(xs_vals)
+                idx_ys_min = np.argmin(ys_vals)
+                if idx_xs_min != idx_ys_min or amp_vals[idx_xs_min] < 4.:
+                    # unable to select one based on the given criteria, use closest in that case
+                    idx_peak_sel = idx_peak_closest
                 else:
-                    x_m = peaks[i_p, 0]
-                    y_m = peaks[i_p, 1]
-                    y_i = np.int32((peaks[i_p, 0] - x_range[0])/d_xy)
-                    x_i = np.int32((peaks[i_p, 1] - y_range[0])/d_xy)
-                field_model += models.Gaussian2D(x_mean=x_m, y_mean=y_m,
-                                                 amplitude=image[x_i, y_i],
-                                                 x_stddev=1., y_stddev=1.,
-                                                 fixed={'x_mean': fixed, 'y_mean': fixed})
-                print image[x_i, y_i]
-            fitter = fitting.LevMarLSQFitter()
-            fitted_res = fitter(field_model, _x.ravel(), _y.ravel(), image.ravel())
-            print fitted_res
-            return fitted_res(_x.ravel(), _y.ravel()).reshape(_x.shape), fitted_res
+                    idx_peak_sel = idx_peak_close[idx_xs_min]
+            else:
+                idx_peak_sel = idx_peak_closest
 
-        print 'Computing density field'
-        density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
-        # density_field += np.log(pm_plane.shape[0])
-        density_field = np.exp(density_field).reshape(_x.shape) * 1e3  # scale the field for easier use
+            final_list_g2d_params.append([multi_gauss2d_res[p_str+str(idx_peak_sel)].value for p_str in ['amp', 'x', 'y', 'xs', 'ys', 'th']])
 
-        # find and evaluate peaks if needed
-        peak_coord_init = peak_local_max(density_field, min_distance=int(1. / d_xy), num_peaks=4)
-        print x_range
-        print y_range
-        ceter_pm_img_x = (self.pm_center[0] - x_range[0]) / d_xy
-        ceter_pm_img_y = (self.pm_center[1] - y_range[0]) / d_xy
+            # plot and save resulting plots
+            fig, ax = plt.subplots(2, 2)
+            im = ax[0,0].imshow(density_field, interpolation=None, cmap='viridis', origin='lower', vmin=0., alpha=1.)
+            ax[0,0].set(xlim=(x_range-x_range[0])/d_xy, ylim=(y_range-y_range[0])/d_xy, ylabel='Original pm space and density')
+            ax[0,0].scatter((pm_plane[:,0]-x_range[0])/d_xy, (pm_plane[:,1]-y_range[0])/d_xy, lw=0, s=1, c='black', alpha=0.1)
+            ax[0,0].scatter(peak_coord_init[:, 1], peak_coord_init[:, 0], lw=0, s=5, c='C3')
+            ax[0,0].scatter(ceter_pm_img_x, ceter_pm_img_y, lw=0, s=10, c='C0')
+            fig.colorbar(im, ax=ax[0,0])
 
-        # prepare peak coordinates and peak values
-        lm_peak = list([])
-        lm_peak_val = list([])
-        for i_p in range(peak_coord_init.shape[0]):
-            lm_peak.append([peak_coord_init[i_p, 1] * d_xy + x_range[0], peak_coord_init[i_p, 0] * d_xy + y_range[0]])  # convert to pm values
-            lm_peak_val.append(density_field[peak_coord_init[i_p, 0], peak_coord_init[i_p, 1]])
-        density_field_background, _ = fit_multi_gaussian2d(density_field, _x, _y,
-                                                           np.array(lm_peak), np.array(lm_peak_val), vary_position=True)
+            ax[0,1].imshow(density_field_background, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
+            ax[0,1].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Fitted pm distribution')
 
-        # remove the background
-        density_field_new = density_field - density_field_background
+            im = ax[1,0].imshow(density_field_new, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
+            ax[1,0].scatter(multi_gauss2d_res['x'+str(idx_peak_sel)].value, multi_gauss2d_res['y'+str(idx_peak_sel)].value, lw=0, s=10, c='C0')
+            ax[1,0].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Residuals after fit, new cluster pm center')
+            fig.colorbar(im, ax=ax[1, 0])
 
-        # find and evaluate peaks if needed
-        peak_coord = peak_local_max(density_field_new, min_distance=int(1. / d_xy), num_peaks=4)
-        n_peaks = peak_coord.shape[0]
-        center_peak_dist = np.sqrt((peak_coord[:,1]-ceter_pm_img_x)**2 + (peak_coord[:,0]-ceter_pm_img_y)**2)
-        print peak_coord
-        print center_peak_dist
+            if i_run < n_runs:
+                # skip plotting at this point for the last pm incarnation run
+                plt.tight_layout()
+                plt.savefig('pm_gaussian_fit' + suffix + '_'+str(i_run)+'.png', dpi=300)
+                # plt.show()
+                plt.close()
 
-        density_field_clusters, _ = fit_2d_gaussians(density_field_new, peak_coord, fixed=True, pm_xy=False)
+        # combine results from multiple runs and add results tho the final fit plot
+        final_g2d_params = np.median(final_list_g2d_params, axis=0)
 
-        fig, ax = plt.subplots(2, 2)
-        im = ax[0,0].imshow(density_field, interpolation=None, cmap='viridis', origin='lower', vmin=0., alpha=0.9)
-        ax[0,0].set(xlim=(x_range-x_range[0])/d_xy, ylim=(y_range-y_range[0])/d_xy, ylabel='Original pm space and density')
-        ax[0,0].scatter((pm_plane[:,0]-x_range[0])/d_xy, (pm_plane[:,1]-y_range[0])/d_xy, lw=0, s=4, c='black', alpha=0.2)
-        ax[0,0].scatter(peak_coord_init[:, 1], peak_coord_init[:, 0], lw=0, s=5, c='C3')
-        ax[0,0].scatter(ceter_pm_img_x, ceter_pm_img_y, lw=0, s=10, c='C0')
-        fig.colorbar(im, ax=ax[0,0])
+        ax[1,1].scatter(pm_plane_orig[:,0], pm_plane_orig[:,1], lw=0, s=1, c='black', alpha=0.1)
 
-        ax[0,1].imshow(density_field_background, interpolation=None, cmap='viridis', origin='lower', alpha=0.9)
-        ax[0,1].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Fitted pm distribution')
+        ax[1,1].scatter(final_g2d_params[1], final_g2d_params[2], lw=0, s=10, c='C0')
+        ax[1,1].set(xlim=x_range, ylim=y_range, ylabel='Objects inside cluster pm selection, new center')
 
-        im = ax[1,0].imshow(density_field_new, interpolation=None, cmap='viridis', origin='lower', alpha=0.9)
-        ax[1,0].scatter(peak_coord[:, 1], peak_coord[:, 0], lw=0, s=5, c='C3')
-        ax[1,0].scatter(ceter_pm_img_x, ceter_pm_img_y, lw=0, s=10, c='C0')
-        ax[1,0].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Residuals after fit')
-        fig.colorbar(im, ax=ax[1, 0])
-
-        ax[1,1].imshow(density_field_clusters, interpolation=None, cmap='viridis', origin='lower', alpha=0.9)
-        ax[1,1].scatter((pm_plane[:,0]-x_range[0])/d_xy, (pm_plane[:,1]-y_range[0])/d_xy, lw=0, s=4, c='black', alpha=0.2)
-        ax[1,1].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy)
-
-        # ax[1,2].imshow(density_field_new - density_field_clusters, interpolation=None, cmap='viridis', origin='lower', alpha=0.9)
-        # ax[1,2].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy)
-        fig.tight_layout()
-        plt.savefig('pm_gaussian_fit' + suffix + '.png', dpi=250)
-        # plt.show()
+        # skip plotting at this point for the last pm incarnation run
+        plt.tight_layout()
+        plt.savefig('pm_gaussian_fit' + suffix + '_' + str(i_run) + '.png', dpi=300)
         plt.close()
+
+        # store params in the class and return them
+        self.cluster_g2d_params = final_g2d_params
+        return final_g2d_params
 
     def perform_selection(self, rad, bayesian_mixture=False, model_from_selection=False, max_com=10,
                           covarinace='full', determine_cluster_center=False):

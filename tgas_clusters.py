@@ -88,13 +88,15 @@ if MEMBER_DETECTION:
 
     # iterate over (pre)selected clusters
     # for obs_cluster in np.unique(clusters['Cluster']):
-    for obs_cluster in selected_clusters_Asiago:
-    # for obs_cluster in ['NGC_2264']:
+    # for obs_cluster in selected_clusters_Asiago:
+    for obs_cluster in ['NGC_1252','NGC_6994','NGC_7772','NGC_7826','NGC_1901']:
         print 'Working on:', obs_cluster
 
         out_dir = obs_cluster + out_dir_suffix
 
         idx_cluster_pos = np.where(clusters['Cluster'] == obs_cluster)[0]
+        if len(idx_cluster_pos) == 0:
+            continue
         clust_data = clusters[idx_cluster_pos]
         print ' Basic info -->', 'r1:', clust_data['r1'].data[0], 'r2:', clust_data['r2'].data[0], 'pmra:', clust_data['pmRAc'].data[0], 'pmdec:', clust_data['pmDEc'].data[0]
 
@@ -124,7 +126,7 @@ if MEMBER_DETECTION:
 
         idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
-        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 300  # for now because of uncertain distances
+        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 400  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
 
         n_in_selection = len(gaia_cluster_sub_r2)
@@ -139,10 +141,10 @@ if MEMBER_DETECTION:
         # first determine new cluster center in pm space if needed
         # find_members_class.determine_cluster_center()
 
-        print ' Multi radius Gaussian mixture'
+        print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
-        for c_rad in np.linspace(np.float64(clust_data['r1']), np.float64(clust_data['r2']), 3):
-            find_members_class.perform_selection_density(c_rad, pm_median_all, suffix='_{:.3f}'.format(c_rad))
+        for c_rad in np.linspace(np.float64(clust_data['r1']), np.float64(clust_data['r2']), 2):
+            find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=4)
             # find_members_class.perform_selection(c_rad, bayesian_mixture=False, covarinace='full', max_com=4)
         # !!!!!!! TEMP !!!!!!!
         os.chdir('..')
