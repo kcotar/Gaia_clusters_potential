@@ -65,7 +65,7 @@ class CLUSTER_MEMBERS:
         :param n_runs:
         :return:
         """
-        print ' Density analysis of pm space'
+        print 'Density analysis of pm space'
         idx_sel = self.data['center_sep'] <= rad
         data_cur = self.data[idx_sel]
 
@@ -83,7 +83,7 @@ class CLUSTER_MEMBERS:
         if (x_range[1]-x_range[0])/d_xy > 2e3 or (y_range[1]-y_range[0])/d_xy > 2e3:
             # to reduce processing time in the case of large x or y axis range
             d_xy = 0.1
-        print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
+        # print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
 
         final_list_g2d_params = list([])
         for i_run in np.arange(n_runs)+1:
@@ -96,10 +96,10 @@ class CLUSTER_MEMBERS:
 
             grid_pos_x = np.arange(x_range[0], x_range[1], d_xy)
             grid_pos_y = np.arange(y_range[0], y_range[1], d_xy)
-            print '  Grid points:', len(grid_pos_x), len(grid_pos_y)
+            # print '  Grid points:', len(grid_pos_x), len(grid_pos_y)
             _x, _y = np.meshgrid(grid_pos_x, grid_pos_y)
 
-            print 'Computing density field'
+            print ' Computing density field'
             stars_density = KernelDensity(bandwidth=1, kernel='epanechnikov').fit(pm_plane)
             density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
             # density_field += np.log(pm_plane.shape[0])
@@ -130,7 +130,7 @@ class CLUSTER_MEMBERS:
             final_peaks_pm = np.array(final_peaks_pm)
             final_peaks_pm_dist = np.sqrt((final_peaks_pm[:,0]-self.pm_center[0])**2 + (final_peaks_pm[:,1]-self.pm_center[1])**2)
             # evaluate the closest peak(s)
-            idx_peak_close = np.where(final_peaks_pm_dist < 5.)[0]  # TODO: determine pm distance for close pairs
+            idx_peak_close = np.where(final_peaks_pm_dist < 8.)[0]  # TODO: determine pm distance for close pairs
             n_peak_close = len(idx_peak_close)
             idx_peak_closest = np.argmin(final_peaks_pm_dist)
             print '  Number of close peaks detected: ', n_peak_close
@@ -174,7 +174,7 @@ class CLUSTER_MEMBERS:
             if i_run < n_runs:
                 # skip plotting at this point for the last pm incarnation run
                 plt.tight_layout()
-                plt.savefig('pm_gaussian_fit' + suffix + '_'+str(i_run)+'.png', dpi=300)
+                plt.savefig('pm_gaussian_fit' + suffix + '_{:02.0f}.png'.format(i_run), dpi=300)
                 # plt.show()
                 plt.close()
 
@@ -188,8 +188,38 @@ class CLUSTER_MEMBERS:
 
         # skip plotting at this point for the last pm incarnation run
         plt.tight_layout()
-        plt.savefig('pm_gaussian_fit' + suffix + '_' + str(i_run) + '.png', dpi=300)
+        plt.savefig('pm_gaussian_fit' + suffix + '_' + str(i_run) + '.png', dpi=250)
         plt.close()
+
+        # plot histograms of individual parameter in final_g2d_params
+        # 'amp', 'x', 'y', 'xs', 'ys', 'th'
+        final_list_g2d_params = np.array(final_list_g2d_params)
+        fig, ax = plt.subplots(2, 3)
+        ax[0, 0].hist(final_list_g2d_params[:, 0], bins=25)
+        ax[0, 0].axvline(final_g2d_params[0], c='black')
+        ax[0, 0].set(title='Amp')
+        ax[0, 1].hist(final_list_g2d_params[:, 1], bins=25)
+        ax[0, 1].axvline(final_g2d_params[1], c='black')
+        ax[0, 1].set(title='x')
+        ax[0, 2].hist(final_list_g2d_params[:, 2], bins=25)
+        ax[0, 2].axvline(final_g2d_params[2], c='black')
+        ax[0, 2].set(title='y')
+        ax[1, 0].hist(final_list_g2d_params[:, 3], bins=25)
+        ax[1, 0].axvline(final_g2d_params[3], c='black')
+        ax[1, 0].set(title='xs')
+        ax[1, 1].hist(final_list_g2d_params[:, 4], bins=25)
+        ax[1, 1].axvline(final_g2d_params[4], c='black')
+        ax[1, 1].set(title='ys')
+        ax[1, 2].hist(final_list_g2d_params[:, 5], bins=25)
+        ax[1, 2].axvline(final_g2d_params[5], c='black')
+        ax[1, 2].set(title='th')
+        plt.tight_layout()
+        plt.savefig('pm_gaussian_fit' + suffix + '_hist.png', dpi=250)
+        plt.close()
+
+        # determine if scatter of detected parameters is too large or cluster blobs are very large
+        if final_g2d_params[3] > 2. or final_g2d_params[4] > 2. or (np.max(final_list_g2d_params[:, 1])-np.min(final_list_g2d_params[:, 1])) > 3 or (np.max(final_list_g2d_params[:, 2])-np.min(final_list_g2d_params[:, 2])) > 3:
+            final_g2d_params = np.full_like(final_g2d_params, np.nan)
 
         # store params in the class and return them
         self.cluster_g2d_params = final_g2d_params
@@ -539,3 +569,10 @@ class CLUSTER_MEMBERS:
         plt.savefig(path, dpi=250)
         plt.close()
 
+    def plot_selection_density_pde(self, path='plot.png'):
+        colour_val = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=True)
+        plt.scatter(self.data['ra'], self.data['dec'], lw=0, s=2, c=colour_val, alpha=1., vmin=0., vmax=1.)
+        plt.colorbar()
+        plt.savefig(path, dpi=250)
+        plt.close()
+        return colour_val

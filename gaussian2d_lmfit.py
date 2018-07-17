@@ -3,9 +3,11 @@ from time import time
 from lmfit import minimize, Parameters
 
 
-def single_gaussian2D(xv, yv, param_values):
+def single_gaussian2D(xv, yv, param_values, pde=False):
     # unpack parameters
     amp, xm, ym, xs, ys, th = param_values
+    if pde:
+        amp = 1.
     # first compute definitions that will be used in exponential function
     aa = (np.cos(th) ** 2) / (2. * xs ** 2) + (np.sin(th) ** 2) / (2. * ys ** 2)
     bb = (np.sin(2. * th)) / (2. * xs ** 2) - (np.sin(2. * th)) / (2. * ys ** 2)
