@@ -1,6 +1,6 @@
 import numpy as np
 from time import time
-from lmfit import minimize, Parameters
+from lmfit import minimize, Parameters, models
 
 
 def single_gaussian2D(xv, yv, param_values, pde=False):
@@ -14,6 +14,7 @@ def single_gaussian2D(xv, yv, param_values, pde=False):
     cc = (np.sin(th) ** 2) / (2. * xs ** 2) + (np.cos(th) ** 2) / (2. * ys ** 2)
     # the following equation is the same as in the case of the Astropy model fitting (Wikipedia source)
     ee = -1. * aa * (xv - xm) ** 2 - bb * (xv - xm) * (yv - ym) - cc * (yv - ym) ** 2
+    # return (amp/(xs*ys*np.sqrt(2.*np.pi))) * np.exp(ee)
     return amp * np.exp(ee)
 
 

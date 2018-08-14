@@ -11,8 +11,10 @@ from scipy.interpolate import interp1d
 from scipy.spatial import ConvexHull, Delaunay
 from sklearn.neighbors import KernelDensity
 from skimage.feature import peak_local_max
-from astropy.modeling import models, fitting
+# from astropy.modeling import models, fitting
 from gaussian2d_lmfit import *
+from scipy.stats import norm
+from scipy.stats import multivariate_normal
 
 
 # -------------------------------
@@ -23,6 +25,8 @@ from gaussian2d_lmfit import *
 # -------------------------------
 # class functions
 # -------------------------------
+def get_gauss_prob(vals, v_mean, v_std):
+    return 0.5 + norm.cdf(-np.abs(np.array(vals) - v_mean), 0., v_std)
 
 
 # -------------------------------
@@ -53,6 +57,13 @@ class CLUSTER_MEMBERS:
 
         # results holders
         self.cluster_g2d_params = None
+        self.cluster_dist_params = None
+        self.cluster_pos_params = None
+
+        self.pm_probability = None
+        self.dist_probability = None
+        self.pos_probability = None
+
         self.selected_final = None
         self.selected = np.zeros(len(self.data))
         self.n_runs = 0
@@ -93,6 +104,8 @@ class CLUSTER_MEMBERS:
                 pm_plane.append([np.random.normal(pm_plane_orig[i_pm, 0], pm_plane_errors[i_pm, 0]),
                                  np.random.normal(pm_plane_orig[i_pm, 1], pm_plane_errors[i_pm, 1])])
             pm_plane = np.array(pm_plane)
+            pm_plane_median = np.median(pm_plane, axis=0)
+            pm_plane_median_px = np.int32((pm_plane_median - np.array([x_range[0], y_range[0]])) / d_xy)[::-1]  # also swap x and y
 
             grid_pos_x = np.arange(x_range[0], x_range[1], d_xy)
             grid_pos_y = np.arange(y_range[0], y_range[1], d_xy)
@@ -100,13 +113,22 @@ class CLUSTER_MEMBERS:
             _x, _y = np.meshgrid(grid_pos_x, grid_pos_y)
 
             print ' Computing density field'
-            stars_density = KernelDensity(bandwidth=1, kernel='epanechnikov').fit(pm_plane)
+            # TODO: maybe check wider bandwidths
+            stars_density = KernelDensity(bandwidth=1., kernel='epanechnikov').fit(pm_plane)
             density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
             # density_field += np.log(pm_plane.shape[0])
             density_field = np.exp(density_field).reshape(_x.shape) * 1e3  # scale the field for easier use
 
             # find and evaluate peaks if needed
-            peak_coord_init = peak_local_max(density_field, min_distance=int(1. / d_xy), num_peaks=4)
+            peak_coord_init = peak_local_max(density_field, min_distance=int(1. / d_xy), num_peaks=5)
+            # add aditional peak in the middle of the image if only one
+            if peak_coord_init.shape[0] == 1:
+                peak_coord_init = np.vstack((peak_coord_init, [int((y_range[1]-y_range[0])/d_xy/2.),
+                                                               int((x_range[1]-x_range[0])/d_xy/2.)]))
+            # add a peak in te middle of the distribution if it is not present there or in its vicinity
+            if np.min(np.sqrt(np.sum((peak_coord_init - pm_plane_median_px)**2, axis=1))) > 1./d_xy:
+                peak_coord_init = np.vstack((peak_coord_init, pm_plane_median_px))
+            # image scaling from py to pixel space
             ceter_pm_img_x = (self.pm_center[0] - x_range[0]) / d_xy
             ceter_pm_img_y = (self.pm_center[1] - y_range[0]) / d_xy
 
@@ -126,33 +148,37 @@ class CLUSTER_MEMBERS:
             # extract new peak centers end evaluate results
             final_peaks_pm = list([])
             for i_p in range(peak_coord_init.shape[0]):
-                final_peaks_pm.append([multi_gauss2d_res['x'+str(i_p)].value, multi_gauss2d_res['y'+str(i_p)].value])
+                final_peaks_pm.append([multi_gauss2d_res['x'+str(i_p)].value, multi_gauss2d_res['y'+str(i_p)].value,
+                                       multi_gauss2d_res['xs'+str(i_p)].value, multi_gauss2d_res['ys'+str(i_p)].value,
+                                       multi_gauss2d_res['amp' + str(i_p)].value])
             final_peaks_pm = np.array(final_peaks_pm)
             final_peaks_pm_dist = np.sqrt((final_peaks_pm[:,0]-self.pm_center[0])**2 + (final_peaks_pm[:,1]-self.pm_center[1])**2)
             # evaluate the closest peak(s)
-            idx_peak_close = np.where(final_peaks_pm_dist < 8.)[0]  # TODO: determine pm distance for close pairs
+            idx_peak_close = np.where(final_peaks_pm_dist < 10.)[0]
             n_peak_close = len(idx_peak_close)
             idx_peak_closest = np.argmin(final_peaks_pm_dist)
+            idx_peak_sort = np.argsort(final_peaks_pm_dist)
             print '  Number of close peaks detected: ', n_peak_close
             if n_peak_close > 1:
-                # TODO: select appropriate peak from multiple possible
-                # select narrower peak, with smaller xs and ys
-                # amp can be smaller or larger depending on the stellar densities, but still above the noise
-                amp_vals = np.array([multi_gauss2d_res['amp' + str(i_p_c)].value for i_p_c in idx_peak_close])
-                xs_vals = np.array([multi_gauss2d_res['xs' + str(i_p_c)].value for i_p_c in idx_peak_close])
-                ys_vals = np.array([multi_gauss2d_res['ys' + str(i_p_c)].value for i_p_c in idx_peak_close])
-                # apply thresholds
-                idx_xs_min = np.argmin(xs_vals)
-                idx_ys_min = np.argmin(ys_vals)
-                if idx_xs_min != idx_ys_min or amp_vals[idx_xs_min] < 4.:
-                    # unable to select one based on the given criteria, use closest in that case
-                    idx_peak_sel = idx_peak_closest
+                # V2
+                # determine ok and reorder by distance
+                max_sigma = 1.3
+                min_amp = np.percentile(density_field, 80.)
+                idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
+                                        final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
+                idx_ok = np.where(idx_ok)[0]
+                # select first arg that is ok
+                if len(idx_ok) > 0:
+                    idx_peak_sel = idx_peak_sort[idx_ok[0]]
                 else:
-                    idx_peak_sel = idx_peak_close[idx_xs_min]
+                    idx_peak_sel = None
             else:
                 idx_peak_sel = idx_peak_closest
 
-            final_list_g2d_params.append([multi_gauss2d_res[p_str+str(idx_peak_sel)].value for p_str in ['amp', 'x', 'y', 'xs', 'ys', 'th']])
+            if idx_peak_sel is None:
+                final_list_g2d_params.append(np.full(6, np.nan))
+            else:
+                final_list_g2d_params.append([multi_gauss2d_res[p_str+str(idx_peak_sel)].value for p_str in ['amp', 'x', 'y', 'xs', 'ys', 'th']])
 
             # plot and save resulting plots
             fig, ax = plt.subplots(2, 2)
@@ -165,9 +191,10 @@ class CLUSTER_MEMBERS:
 
             ax[0,1].imshow(density_field_background, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
             ax[0,1].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Fitted pm distribution')
+            if idx_peak_sel is not None:
+                ax[0, 1].scatter(peak_coord_init[idx_peak_sel, 1], peak_coord_init[idx_peak_sel, 0], lw=0, s=6, c='C3')
 
             im = ax[1,0].imshow(density_field_new, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
-            ax[1,0].scatter(multi_gauss2d_res['x'+str(idx_peak_sel)].value, multi_gauss2d_res['y'+str(idx_peak_sel)].value, lw=0, s=10, c='C0')
             ax[1,0].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Residuals after fit, new cluster pm center')
             fig.colorbar(im, ax=ax[1, 0])
 
@@ -179,7 +206,7 @@ class CLUSTER_MEMBERS:
                 plt.close()
 
         # combine results from multiple runs and add results tho the final fit plot
-        final_g2d_params = np.median(final_list_g2d_params, axis=0)
+        final_g2d_params = np.nanmedian(final_list_g2d_params, axis=0)
 
         ax[1,1].scatter(pm_plane_orig[:,0], pm_plane_orig[:,1], lw=0, s=1, c='black', alpha=0.1)
 
@@ -188,38 +215,35 @@ class CLUSTER_MEMBERS:
 
         # skip plotting at this point for the last pm incarnation run
         plt.tight_layout()
-        plt.savefig('pm_gaussian_fit' + suffix + '_' + str(i_run) + '.png', dpi=250)
+        plt.savefig('pm_gaussian_fit' + suffix + '_{:02.0f}.png'.format(i_run), dpi=300)
         plt.close()
 
-        # plot histograms of individual parameter in final_g2d_params
-        # 'amp', 'x', 'y', 'xs', 'ys', 'th'
-        final_list_g2d_params = np.array(final_list_g2d_params)
-        fig, ax = plt.subplots(2, 3)
-        ax[0, 0].hist(final_list_g2d_params[:, 0], bins=25)
-        ax[0, 0].axvline(final_g2d_params[0], c='black')
-        ax[0, 0].set(title='Amp')
-        ax[0, 1].hist(final_list_g2d_params[:, 1], bins=25)
-        ax[0, 1].axvline(final_g2d_params[1], c='black')
-        ax[0, 1].set(title='x')
-        ax[0, 2].hist(final_list_g2d_params[:, 2], bins=25)
-        ax[0, 2].axvline(final_g2d_params[2], c='black')
-        ax[0, 2].set(title='y')
-        ax[1, 0].hist(final_list_g2d_params[:, 3], bins=25)
-        ax[1, 0].axvline(final_g2d_params[3], c='black')
-        ax[1, 0].set(title='xs')
-        ax[1, 1].hist(final_list_g2d_params[:, 4], bins=25)
-        ax[1, 1].axvline(final_g2d_params[4], c='black')
-        ax[1, 1].set(title='ys')
-        ax[1, 2].hist(final_list_g2d_params[:, 5], bins=25)
-        ax[1, 2].axvline(final_g2d_params[5], c='black')
-        ax[1, 2].set(title='th')
-        plt.tight_layout()
-        plt.savefig('pm_gaussian_fit' + suffix + '_hist.png', dpi=250)
-        plt.close()
-
-        # determine if scatter of detected parameters is too large or cluster blobs are very large
-        if final_g2d_params[3] > 2. or final_g2d_params[4] > 2. or (np.max(final_list_g2d_params[:, 1])-np.min(final_list_g2d_params[:, 1])) > 3 or (np.max(final_list_g2d_params[:, 2])-np.min(final_list_g2d_params[:, 2])) > 3:
-            final_g2d_params = np.full_like(final_g2d_params, np.nan)
+        if np.sum(np.isfinite(final_g2d_params)) != 0:
+            # plot histograms of individual parameter in final_g2d_params
+            # 'amp', 'x', 'y', 'xs', 'ys', 'th'
+            final_list_g2d_params = np.array(final_list_g2d_params)
+            fig, ax = plt.subplots(2, 3)
+            ax[0, 0].hist(final_list_g2d_params[:, 0], range=(np.nanmin(final_list_g2d_params[:, 0]), np.nanmax(final_list_g2d_params[:, 0])), bins=25)
+            ax[0, 0].axvline(final_g2d_params[0], c='black')
+            ax[0, 0].set(title='Amp ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 0])))
+            ax[0, 1].hist(final_list_g2d_params[:, 1], range=(np.nanmin(final_list_g2d_params[:, 1]), np.nanmax(final_list_g2d_params[:, 1])), bins=25)
+            ax[0, 1].axvline(final_g2d_params[1], c='black')
+            ax[0, 1].set(title='x ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 1])))
+            ax[0, 2].hist(final_list_g2d_params[:, 2], range=(np.nanmin(final_list_g2d_params[:, 2]), np.nanmax(final_list_g2d_params[:, 2])), bins=25)
+            ax[0, 2].axvline(final_g2d_params[2], c='black')
+            ax[0, 2].set(title='y ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 2])))
+            ax[1, 0].hist(final_list_g2d_params[:, 3], range=(np.nanmin(final_list_g2d_params[:, 3]), np.nanmax(final_list_g2d_params[:, 3])), bins=25)
+            ax[1, 0].axvline(final_g2d_params[3], c='black')
+            ax[1, 0].set(title='xs ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 3])))
+            ax[1, 1].hist(final_list_g2d_params[:, 4], range=(np.nanmin(final_list_g2d_params[:, 4]), np.nanmax(final_list_g2d_params[:, 4])), bins=25)
+            ax[1, 1].axvline(final_g2d_params[4], c='black')
+            ax[1, 1].set(title='ys ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 4])))
+            ax[1, 2].hist(final_list_g2d_params[:, 5], range=(np.nanmin(final_list_g2d_params[:, 5]), np.nanmax(final_list_g2d_params[:, 5])), bins=25)
+            ax[1, 2].axvline(final_g2d_params[5], c='black')
+            ax[1, 2].set(title='th ({:.3f})'.format(np.nanstd(final_list_g2d_params[:, 5])))
+            plt.tight_layout()
+            plt.savefig('pm_gaussian_fit' + suffix + '_hist.png', dpi=250)
+            plt.close()
 
         # store params in the class and return them
         self.cluster_g2d_params = final_g2d_params
@@ -402,22 +426,35 @@ class CLUSTER_MEMBERS:
         plt.savefig(path, dpi=250)
         plt.close()
 
-    def refine_distances_selection(self, out_plot=False, path='plot.png'):
+    def refine_distances_selection(self, out_plot=False, path='plot.png', n_iter=1):
         idx_c = self.get_cluster_members()
         data_c = self.data[idx_c]
 
-        cluster_pc_medi = np.nanmedian(data_c['parsec'])
-        if len(data_c) >= 3:
-            cluster_pc_std = np.nanstd(data_c['parsec'])
-        else:
-            cluster_pc_std = 75.
+        dist_med = list([])
+        dist_std = list([])
+        members_par = data_c['parallax'].data
+        members_par_e = data_c['parallax_error'].data
+        for i_plx in np.arange(n_iter)+1:
+            print ' Creating new incarnation of stellar distances'
+            plx_new_list = list([])
+            for i_mp in range(len(members_par)):
+                plx_new_list.append(np.random.normal(members_par[i_mp], members_par_e[i_mp]))
+            dist_list = 1e3/np.array(plx_new_list)  # pc
+            dist_list[np.logical_or(dist_list < np.percentile(dist_list,2), dist_list > np.percentile(dist_list,98))] = np.nan
+            dist_med.append(np.nanmedian(dist_list))
+            dist_std.append(np.nanstd(dist_list))
+        cluster_pc_medi = np.nanmedian(dist_med)
+        cluster_pc_std = np.nanmedian(dist_std)
+        print 'Medians:', dist_med
+        print 'Stds:   ', dist_std
+        # save results
+        self.cluster_dist_params = [cluster_pc_medi, cluster_pc_std]
+        self.dist_probability = (1./(cluster_pc_std*np.sqrt(2.*np.pi))) * np.exp(-0.5*(self.data['parsec']-cluster_pc_medi)**2/cluster_pc_std**2)
 
         if out_plot:
             plt.hist(self.data['parsec'], range=self.parsec_lim, bins=100, color='black', alpha=0.3)
             plt.hist(data_c['parsec'], range=self.parsec_lim, bins=100, color='red', alpha=0.3)
             plt.axvline(x=cluster_pc_medi, color='red', ls='--')
-            # plt.axvline(x=cluster_pc_medi + 0.5*cluster_pc_std, color='red', ls='--', alpha=0.6)
-            # plt.axvline(x=cluster_pc_medi - 0.5*cluster_pc_std, color='red', ls='--', alpha=0.6)
             plt.axvline(x=cluster_pc_medi + cluster_pc_std, color='red', ls='--', alpha=0.4)
             plt.axvline(x=cluster_pc_medi - cluster_pc_std, color='red', ls='--', alpha=0.4)
             plt.axvline(x=cluster_pc_medi + 2.0*cluster_pc_std, color='red', ls='--', alpha=0.2)
@@ -427,26 +464,12 @@ class CLUSTER_MEMBERS:
             plt.savefig(path, dpi=250)
             plt.close()
 
-        if np.abs(self.ref['d'] - cluster_pc_medi) > 150:
-            print ' Distance error is too large for this object'
-            return False
+        # TODO: exclude those checks for now
+        # if np.abs(self.ref['d'] - cluster_pc_medi) > 150:
+        #     print ' Distance error is too large for this object'
+        #     return False
 
-        # else do the selection based on distance distribution
-        std_multi_thr = 1.
-        idx_bad_dist = np.abs(data_c['parsec'] - cluster_pc_medi) > std_multi_thr * cluster_pc_std
-        n_nbad = np.sum(idx_bad_dist)
 
-        print ' Inside dist:', np.std(data_c['parsec'][~idx_bad_dist])
-        if np.std(data_c['parsec'][~idx_bad_dist]) > 75:
-            print ' Distribution of distances inside cluster is large'
-            return False
-
-        if n_nbad > 0:
-            mark_bad = np.where(idx_c)[0][idx_bad_dist]
-            n_bef = np.sum(self.selected_final)
-            self.selected_final[mark_bad] = False
-            n_aft = np.sum(self.selected_final)
-            print ' Removed by distance:', n_bef-n_aft
 
         return True
 
@@ -569,10 +592,299 @@ class CLUSTER_MEMBERS:
         plt.savefig(path, dpi=250)
         plt.close()
 
-    def plot_selection_density_pde(self, path='plot.png'):
-        colour_val = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=True)
-        plt.scatter(self.data['ra'], self.data['dec'], lw=0, s=2, c=colour_val, alpha=1., vmin=0., vmax=1.)
-        plt.colorbar()
+    # def _get_pro_complete(self, include_dist=False, include_radec=False):
+    #     # pmra_prob = get_gauss_prob(self.data['pmra'], self.cluster_g2d_params[1], self.cluster_g2d_params[3])
+    #     # pmdec_prob = get_gauss_prob(self.data['pmdec'], self.cluster_g2d_params[2], self.cluster_g2d_params[4])
+    #     # joint_probability = pmdec_prob * pmra_prob
+    #     #
+    #     # if include_dist:
+    #     #     joint_probability *= get_gauss_prob(self.data['parsec'], self.cluster_dist_params[0],
+    #     #                                         self.cluster_dist_params[1])
+    #     #
+    #     # if include_radec:
+    #     #     joint_probability *= get_gauss_prob(self.data['ra'], self.cluster_pos_params[0], self.cluster_pos_params[2])
+    #     #     joint_probability *= get_gauss_prob(self.data['dec'], self.cluster_pos_params[1],
+    #     #                                         self.cluster_pos_params[3])
+    #     #
+    #     # return joint_probability
+    #
+    #     # VERSION 2
+    #     def gauss2d(v1, v2, m1, m2, s1, s2):
+    #         return 1. * np.exp(-1 * ((v1 - m1) / (2. * s1)) ** 2 - 1 * ((v2 - m2) / (2. * s2)) ** 2)
+    #
+    #     def gauss1d(v1, m1, s1):
+    #         return 1. * np.exp(-1 * ((v1 - m1) / (2. * s1)) ** 2)
+    #
+    #     g_val = gauss2d(self.data['pmra'], self.data['pmdec'],
+    #                     self.cluster_g2d_params[1], self.cluster_g2d_params[2],
+    #                     self.cluster_g2d_params[3], self.cluster_g2d_params[4])
+    #     if include_dist:
+    #         g_val *= gauss1d(self.data['parsec'], self.cluster_dist_params[0], self.cluster_dist_params[1])
+    #
+    #     if include_radec:
+    #         g_val *= gauss2d(self.data['ra'], self.data['dec'],
+    #                          self.cluster_pos_params[0], self.cluster_pos_params[1],
+    #                          self.cluster_pos_params[2], self.cluster_pos_params[3])
+    #
+    #     return g_val
+    #
+    # def _get_pro_complete_selection(self, include_dist=False, include_radec=False, prob_thr=25):
+    #     def gauss2d(v1, v2, m1, m2, s1, s2):
+    #         return 1. * np.exp(-1 * ((v1 - m1) / (2. * s1)) ** 2 - 1 * ((v2 - m2) / (2. * s2)) ** 2)
+    #
+    #     def gauss1d(v1, m1, s1):
+    #         return 1. * np.exp(-1 * ((v1 - m1) / (2. * s1)) ** 2)
+    #
+    #     g_val = gauss2d(self.data['pmra'], self.data['pmdec'],
+    #                     self.cluster_g2d_params[1], self.cluster_g2d_params[2],
+    #                     self.cluster_g2d_params[3], self.cluster_g2d_params[4])
+    #     idx_sel = g_val >= prob_thr/100.
+    #
+    #     if include_dist:
+    #         g_val = gauss1d(self.data['parsec'], self.cluster_dist_params[0], self.cluster_dist_params[1])
+    #         idx_sel = np.logical_and(idx_sel, g_val >= prob_thr/100.)
+    #
+    #     if include_radec:
+    #         g_val = gauss2d(self.data['ra'], self.data['dec'],
+    #                         self.cluster_pos_params[0], self.cluster_pos_params[1],
+    #                         self.cluster_pos_params[2], self.cluster_pos_params[3])
+    #         idx_sel = np.logical_and(idx_sel, g_val >= prob_thr/100.)
+    #
+    #     self.selected_final = deepcopy(idx_sel)
+    #     return idx_sel
+
+    def _get_pro_complete(self, prob_thr=None, prob_sigma=None, return_sigma_vals=False):
+        # pmra, pmdec, parsec, ra, dec
+        dist_mean_vals = np.array([self.cluster_g2d_params[1], self.cluster_g2d_params[2],
+                                   self.cluster_dist_params[0],
+                                   self.cluster_pos_params[0], self.cluster_pos_params[1]])
+        dist_std_vals = np.array([self.cluster_g2d_params[3], self.cluster_g2d_params[4],
+                                  self.cluster_dist_params[1],
+                                  self.cluster_pos_params[2], self.cluster_pos_params[3]])
+        data_vals = self.data['pmra', 'pmdec', 'parsec', 'ra', 'dec'].to_pandas().values
+        n_params = len(dist_std_vals)
+
+        # cov_matrix = np.identity(len(dist_std_vals)) * dist_std_vals**2
+        cov_matrix = np.cov(data_vals[self.selected_final].T)
+
+        multi_prob = multivariate_normal.pdf(data_vals, mean=dist_mean_vals, cov=cov_matrix)
+        # multi_prob = multivariate_normal.cdf(-1.*np.abs(data_vals - dist_mean_vals), mean=None, cov=cov_matrix)
+
+        max_sigma = 2.
+        eval_param_values = dist_mean_vals + dist_std_vals*np.repeat([np.arange(0, max_sigma+1, 0.5)], n_params, axis=0).T
+        multi_prob_sigmas = multivariate_normal.pdf(eval_param_values, mean=dist_mean_vals, cov=cov_matrix)
+        # eval_param_values = dist_std_vals * np.repeat([np.arange(0, max_sigma + 1, 0.5)], n_params, axis=0).T
+        # multi_prob_sigmas = multivariate_normal.cdf(-1.*np.abs(eval_param_values), mean=None, cov=cov_matrix)
+        # print 'Sigma prob', multi_prob_sigmas
+
+        if prob_thr is None and prob_sigma is None:
+            if return_sigma_vals:
+                return multi_prob, multi_prob_sigmas
+            else:
+                return multi_prob
+        elif prob_sigma > 0:
+            prob_thr_sigma = multivariate_normal.pdf(dist_mean_vals + prob_sigma*dist_std_vals, mean=dist_mean_vals, cov=cov_matrix)
+            # prob_thr_sigma = multivariate_normal.cdf(-1.*np.abs(prob_sigma*dist_std_vals), mean=None, cov=cov_matrix)
+
+            idx_sel = multi_prob >= prob_thr_sigma
+            self.selected_final = deepcopy(idx_sel)
+        else:
+            idx_sel = multi_prob >= prob_thr / 100.
+            self.selected_final = deepcopy(idx_sel)
+            return idx_sel
+
+    def plot_selection_density_pde(self, path='plot.png', plot=True, include_dist=False, include_radec=False):
+        # pm_probability = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=True)
+
+        joint_probability = self._get_pro_complete(prob_thr=None)
+
+        if plot:
+            max_prob = np.max(joint_probability)
+            plt.scatter(self.data['ra'], self.data['dec'], lw=0, s=2, c=joint_probability, alpha=1., vmin=0., vmax=max_prob)
+            plt.colorbar()
+            plt.tight_layout()
+            plt.savefig(path, dpi=250)
+            plt.close()
+            # pde histogram
+            plt.hist(joint_probability, range=[0, max_prob], bins=25)
+            plt.xlim([0, 1])
+            plt.gca().set_yscale('log', nonposy='clip')
+            plt.tight_layout()
+            plt.savefig(path[:-4]+'_hist.png', dpi=250)
+            plt.close()
+        return joint_probability
+
+    def get_cluster_members_pmprob(self, min_prob=10.):
+
+        joint_probability = self._get_pro_complete(prob_thr=None)
+        idx_members = joint_probability >= min_prob/100.
+        self.selected_final = deepcopy(idx_members)
+        return idx_members
+
+    def plot_cluster_members_pmprob(self, path='plot.png', min_prob=None, max_sigma=1.):
+
+        g_val = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=False)
+        g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + max_sigma*self.cluster_g2d_params[3],
+                                        self.cluster_g2d_params[2] + max_sigma*self.cluster_g2d_params[4],
+                                        self.cluster_g2d_params, pde=False)
+
+        self.selected_final = g_val >= g_val_sigma
+        idx_p = self.selected_final
+        plt.scatter(self.data['pmra'][~idx_p], self.data['pmdec'][~idx_p], lw=0, s=3, c='black', alpha=0.2)
+        plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=3, c='red', alpha=0.2)
+        # plt.scatter(self.data['pmra'], self.data['pmdec'], lw=0, s=2, c='black', alpha=0.2)
+        # for s in [5., 4., 3., 2., 1.]:
+        #     g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + s*self.cluster_g2d_params[3],
+        #                                     self.cluster_g2d_params[2] + s*self.cluster_g2d_params[4],
+        #                                     self.cluster_g2d_params, pde=False)
+        #     idx_p = g_val >= g_val_sigma
+        #     plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=2)
+        plt.scatter(self.pm_center[0], self.pm_center[1], lw=0, s=8, marker='*', c='blue')
+        plt.xlim(self.pl_xlim)
+        plt.ylim(self.pl_ylim)
         plt.savefig(path, dpi=250)
         plt.close()
-        return colour_val
+
+    def initial_distance_cut(self, path='plot.png', max_sigma=2.):
+        idx_p = self.selected_final
+        h_y, h_e = np.histogram(self.data['parsec'][idx_p], bins=50, range=self.parsec_lim)
+        h_x = h_e[:-1] + (h_e[1]-h_e[0])/2.
+        # fit model to that
+        m_p = np.nanmedian(self.data['parsec'][idx_p])
+
+        fit_model_1 = models.LinearModel()
+        pars = fit_model_1.guess(h_y, x=h_x)
+        fit_model_2 = models.GaussianModel()
+        pars.update(fit_model_2.make_params())
+        fit_model = fit_model_1 + fit_model_2
+        pars['center'].set(m_p, min=m_p-100., max=m_p+100.)
+        pars['sigma'].set(75., min=10., max=120.)
+        pars['amplitude'].set(np.nanmax(h_y), min=5.)
+        pars['slope'].set(0.)
+        pars['intercept'].set(2.)
+
+        fit_out = fit_model.fit(h_y, pars, x=h_x)
+        parsec_std = fit_out.params['sigma'].value
+        parsec_mean = fit_out.params['center'].value
+
+        n_init = np.sum(self.selected_final)
+        idx_parsec = np.logical_and(self.data['parsec'] >= parsec_mean - max_sigma*parsec_std,
+                                    self.data['parsec'] <= parsec_mean + max_sigma*parsec_std)
+        self.selected_final = np.logical_and(self.selected_final, idx_parsec)
+        print '  Removed by distance:', n_init-np.sum(self.selected_final)
+
+        plt.plot(h_x, h_y, c='black')
+        # plt.plot(h_x, fit_init, 'b--')
+        plt.plot(h_x, fit_out.best_fit, 'g--')
+        plt.axvline(parsec_mean + max_sigma*parsec_std, color='b', ls='--', alpha=1., lw=0.5)
+        plt.axvline(parsec_mean - max_sigma*parsec_std, color='b', ls='--', alpha=1., lw=0.5)
+        for s in range(1, 6):
+            plt.axvline(parsec_mean + s*parsec_std, color='red', ls='--', alpha=1.-0.15*s)
+            plt.axvline(parsec_mean - s*parsec_std, color='red', ls='--', alpha=1.-0.15*s)
+        plt.title('Mean: {:.0f}   Sigma: {:.2f}'.format(parsec_mean, parsec_std))
+        plt.tight_layout()
+        plt.savefig(path, dpi=250)
+        plt.close()
+
+        return parsec_mean, parsec_std
+
+    def define_ra_dec_distribution(self):
+        idx_p = self.selected_final
+        self.cluster_pos_params = [np.nanmedian(self.data['ra'][idx_p]), np.nanmedian(self.data['dec'][idx_p]),
+                                   np.nanstd(self.data['ra'][idx_p]), np.nanstd(self.data['dec'][idx_p])]
+
+    def update_selection_parameters(self, sel_limit=None, prob_sigma=None):
+        idx_p = self.selected_final
+
+        self.cluster_g2d_params = [1., np.nanmedian(self.data['pmra'][idx_p]), np.nanmedian(self.data['pmdec'][idx_p]),
+                                   np.nanstd(self.data['pmra'][idx_p]), np.nanstd(self.data['pmdec'][idx_p]), 0.]
+        self.cluster_dist_params = [np.nanmedian(self.data['parsec'][idx_p]), np.nanstd(self.data['parsec'][idx_p])]
+        self.cluster_pos_params = [np.nanmedian(self.data['ra'][idx_p]), np.nanmedian(self.data['dec'][idx_p]),
+                                   np.nanstd(self.data['ra'][idx_p]), np.nanstd(self.data['dec'][idx_p])]
+
+        if sel_limit is not None or prob_sigma is not None:
+            # self._get_pro_complete_selection(prob_thr=sel_limit, include_dist=True, include_radec=True)
+            self._get_pro_complete(prob_thr=sel_limit, prob_sigma=prob_sigma)
+
+    def plot_selected_complete(self, path='plot.png'):
+        fig, ax = plt.subplots(2, 3, figsize=(13, 9))
+        idx_p = self.selected_final
+
+        fig.suptitle('Number stars: '+str(np.sum(idx_p)))
+
+        ax[0, 0].scatter(self.data['ra'][~idx_p], self.data['dec'][~idx_p], lw=0, s=3, c='black', alpha=1)
+        ax[0, 0].scatter(self.data['ra'][idx_p], self.data['dec'][idx_p], lw=0, s=3, c='red', alpha=1)
+
+        ax[0, 1].scatter(self.data['pmra'][~idx_p], self.data['pmdec'][~idx_p], lw=0, s=3, c='black', alpha=0.3)
+        ax[0, 1].scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=3, c='red', alpha=0.3)
+        ax[0, 1].set(xlim=self.pl_xlim, ylim=self.pl_ylim)
+
+        ax[1, 0].hist(self.data['parsec'][~idx_p], range=self.parsec_lim, bins=100, color='black', alpha=0.3)
+        ax[1, 0].hist(self.data['parsec'][idx_p], range=self.parsec_lim, bins=100, color='red', alpha=0.3)
+        ax[1, 0].set(xlim=self.parsec_lim)
+
+        joint_probability, sigma_probabilities = self._get_pro_complete(prob_thr=None, return_sigma_vals=True)
+        min_max_prob = [np.nanmin(joint_probability), np.nanmax(joint_probability)]
+        ax[0, 2].scatter(self.data['ra'], self.data['dec'], lw=0, s=3, c=joint_probability,
+                         vmin=min_max_prob[0], vmax=min_max_prob[1])
+
+        ax[1, 2].hist(joint_probability, range=min_max_prob, bins=40)
+        for s_p in sigma_probabilities:
+            ax[1, 2].axvline(s_p, color='black', ls='--', alpha=0.75)
+        # ax[1, 2].set(xlim=(0., 1.))
+        ax[1, 2].set(xlim=min_max_prob)
+        ax[1, 2].set_yscale('log', nonposy='clip')
+
+        plt.tight_layout()
+        plt.savefig(path)
+        plt.close()
+
+    def plot_selected_complete_dist(self, path='plot.png'):
+        fig, ax = plt.subplots(2, 3, figsize=(13, 9))
+        idx_p = self.selected_final
+
+        fig.suptitle('Number stars: '+str(np.sum(idx_p)))
+
+        # ax[0, 0].hist(self.data['ra'][~idx_p], bins=100, color='black', alpha=0.3)
+        ax[0, 0].hist(self.data['ra'][idx_p], bins=100, color='red', alpha=0.3)
+        ax[0, 0].axvline(self.cluster_pos_params[0], color='red', alpha=0.3)
+        ax[0, 0].axvline(self.cluster_pos_params[0] + self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
+        ax[0, 0].axvline(self.cluster_pos_params[0] - self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
+        ax[0, 0].axvline(self.cluster_pos_params[0] + 2.*self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
+        ax[0, 0].axvline(self.cluster_pos_params[0] - 2.*self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
+
+        # ax[0, 1].hist(self.data['dec'][~idx_p], bins=100, color='black', alpha=0.3)
+        ax[0, 1].hist(self.data['dec'][idx_p], bins=100, color='red', alpha=0.3)
+        ax[0, 1].axvline(self.cluster_pos_params[1], color='red', alpha=0.3)
+        ax[0, 1].axvline(self.cluster_pos_params[1] + self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
+        ax[0, 1].axvline(self.cluster_pos_params[1] - self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
+        ax[0, 1].axvline(self.cluster_pos_params[1] + 2.*self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
+        ax[0, 1].axvline(self.cluster_pos_params[1] - 2.*self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
+
+        # ax[0, 2].hist(self.data['parsec'][~idx_p], bins=100, color='black', alpha=0.3, range=self.parsec_lim)
+        ax[0, 2].hist(self.data['parsec'][idx_p], bins=100, color='red', alpha=0.3, range=self.parsec_lim)
+        ax[0, 2].axvline(self.cluster_dist_params[0], color='red', alpha=0.3)
+        ax[0, 2].axvline(self.cluster_dist_params[0] + self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
+        ax[0, 2].axvline(self.cluster_dist_params[0] - self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
+        ax[0, 2].axvline(self.cluster_dist_params[0] + 2.*self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
+        ax[0, 2].axvline(self.cluster_dist_params[0] - 2.*self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
+
+        # ax[1, 0].hist(self.data['pmra'][~idx_p], bins=100, color='black', alpha=0.3, range=self.pl_xlim)
+        ax[1, 0].hist(self.data['pmra'][idx_p], bins=100, color='red', alpha=0.3, range=self.pl_xlim)
+        ax[1, 0].axvline(self.cluster_g2d_params[1], color='red', alpha=0.3)
+        ax[1, 0].axvline(self.cluster_g2d_params[1] + self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
+        ax[1, 0].axvline(self.cluster_g2d_params[1] - self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
+        ax[1, 0].axvline(self.cluster_g2d_params[1] + 2.*self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
+        ax[1, 0].axvline(self.cluster_g2d_params[1] - 2.*self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
+
+        # ax[1, 1].hist(self.data['pmdec'][~idx_p], bins=100, color='black', alpha=0.3, range=self.pl_ylim)
+        ax[1, 1].hist(self.data['pmdec'][idx_p], bins=100, color='red', alpha=0.3, range=self.pl_ylim)
+        ax[1, 1].axvline(self.cluster_g2d_params[2], color='red', alpha=0.3)
+        ax[1, 1].axvline(self.cluster_g2d_params[2] + self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)
+        ax[1, 1].axvline(self.cluster_g2d_params[2] - self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)
+        ax[1, 1].axvline(self.cluster_g2d_params[2] + 2.*self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)
+        ax[1, 1].axvline(self.cluster_g2d_params[2] - 2.*self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(path)
+        plt.close()

@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('TkAgg')
 import os, imp
 from sklearn.externals import joblib
 from isochrones_class import *
@@ -52,10 +54,10 @@ gaia_ra_dec = coord.ICRS(ra=gaia_data['ra'] * un.deg,
 
 os.chdir('Khar_cluster_initial_Gaia_DR2_RVonly_best')
 clusters = Table.read('Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits')
+
 cluster_col = 'cluster'
 # iterate over preselected clusters
-# for np.unique(clusters[cluster_col]):
-for obs_cluster in ['Melotte_111']:
+for obs_cluster in  np.unique(clusters[cluster_col]):
     print 'Working on:', obs_cluster
     khar_clusters_sel = khar_clusters[khar_clusters['Cluster'] == obs_cluster]
 

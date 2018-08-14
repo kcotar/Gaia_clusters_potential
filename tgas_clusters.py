@@ -2,65 +2,15 @@ import os, imp
 from sklearn.externals import joblib
 from astropy.table import Table
 from isochrones_class import *
-from cluster_class import *
+#from cluster_class import *
 from cluster_members_class import *
 from abundances_analysis import *
-from galpy.potential import MWPotential2014
-from galpy.orbit import Orbit
 from sklearn import mixture
-from matplotlib.colors import LogNorm
 from gaia_data_queries import *
 imp.load_source('hr_class', '../Binaries_clusters/HR_diagram_class.py')
 from hr_class import *
-
-# step 1 of the analysis
-MEMBER_DETECTION = True  # Step 1
-ORBITS_ANALYSIS = False  # Step 2
-USE_UPDATED_KHAR = False
-
-# step 2 of the analysis
-RV_USE = True
-RV_ONLY = False
-NO_INTERACTIONS = False
-REVERSE_VEL = True
-GALAXY_POTENTIAL = True
-QUERY_DATA = True
-
-data_dir = '/home/klemen/data4_mount/'
-khar_dir = data_dir + 'clusters/Kharchenko_2013/'
-
-csv_out_cols_init = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag']
-csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag', 'time_in_cluster', 'ang_dist', '3d_dist']
-
-# read Kharachenko clusters data
-if USE_UPDATED_KHAR:
-    clusters = Table.read(khar_dir + 'catalog_tgas_update.csv')
-else:
-    clusters = Table.read(khar_dir + 'catalog.csv')
-
-print 'Reading additional data'
-galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20180327.fits')
-gaia_galah_xmatch = Table.read(data_dir+'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
-# load isochrones into class
-iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
-
-selected_clusters_Asiago = ['NGC_2264', 'NGC_2281', 'NGC_2301', 'NGC_2548', 'NGC_2632', 'NGC_2682',
-                            'Melotte_111', 'Mamajek_2', 'IC_4665', 'Collinder_350', 'Collinder_359',
-                            'NGC_6633', 'IC_4756', 'Stephenson_1',
-                            'NGC_6738', 'NGC_6793', 'Stock_1',
-                            'Turner_9', 'Roslund_1',
-                            'NGC_6828', 'Roslund_5', 'NGC_6882',
-                            'Roslund_6',
-                            'NGC_6940', 'FSR_0251', 'Alessi_12', 'Roslund_7', 'FSR_0261',
-                            'NGC_6991A', 'NGC_6997', 'Basel_15', 'NGC_7058',
-                            'NGC_7063', 'NGC_7092', 'IC_1396', 'IC_5146', 'NGC_7160',
-                            'NGC_7243', 'Teutsch_39']
-
-cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
-
-output_dir = 'Khar_cluster_initial_Gaia_DR2_500pc'
-os.system('mkdir '+output_dir)
-os.chdir(output_dir)
+from sys import argv
+from getopt import getopt
 
 
 # ------------------------------------------
@@ -73,8 +23,56 @@ def fill_table(in_data, cluster, cols, cols_data):
         out_data[col][idx_l] = cols_data[i_v]
     return out_data
 
+
+# ------------------------------------------
+# ----------------  INPUTS  ----------------
+# ------------------------------------------
+selected_clusters = ['NGC_6940']
+out_dir_suffix = '_11'
+rerun = False
+if len(argv) > 1:
+    # parse input options
+    opts, args = getopt(argv[1:], '', ['clusters=', 'suffix=', 'rerun='])
+    # set parameters, depending on user inputs
+    print opts
+    for o, a in opts:
+        if o == '--clusters':
+            selected_clusters = a.split(',')
+        if o == '--suffix':
+            out_dir_suffix = str(a)
+        if o == '--rerun':
+            rerun = int(a)>0
+
+
+
+# ------------------------------------------
+# ----------------  SETTINGS  --------------
+# ------------------------------------------
+# step 1 of the analysis
+MEMBER_DETECTION = True  # Step 1
+QUERY_DATA = True
+
+data_dir = '/home/klemen/data4_mount/'
+khar_dir = data_dir + 'clusters/Kharchenko_2013/'
+
+# read Kharachenko clusters data
+clusters = Table.read(khar_dir + 'catalog.csv')
+
+print 'Reading additional data'
+galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20180327.fits')
+gaia_galah_xmatch = Table.read(data_dir+'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
+# load isochrones into class
+iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
+
+cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
+
+output_dir = 'Khar_cluster_initial_Gaia_DR2_'+out_dir_suffix
+os.system('mkdir '+output_dir)
+os.chdir(output_dir)
+
 # ------------------------------------------
 # ----------------  STEP 1  ----------------
+
 # ------------------------------------------
 cluster_params_table_fits = os.getcwd() + '/cluster_params.fits'
 if os.path.isfile(cluster_params_table_fits):
@@ -87,17 +85,16 @@ else:
 
 if MEMBER_DETECTION:
     out_dir_suffix = '_member_sel'
-    cluster_obj_found_out = Table(names=('source_id', 'cluster'), dtype=('int64', 'S30'))
+    cluster_obj_found_out = Table(names=('source_id', 'cluster', 'ra', 'dec', 'd'), dtype=('int64', 'S30', 'float64', 'float64', 'float64'))
 
     # iterate over (pre)selected clusters
-    # for obs_cluster in np.unique(clusters['Cluster']):
-    for obs_cluster in selected_clusters_Asiago[:5]:
-    # for obs_cluster in ['NGC_1252','NGC_6994','NGC_7772','NGC_7826','NGC_1901']:
+    for obs_cluster in selected_clusters:
         print 'Working on:', obs_cluster
 
         if np.sum(cluster_params_table['cluster'] == obs_cluster) > 0:
-            print 'Already processed'
-            continue
+            print 'Already processed to some point'
+            if not rerun:
+                continue
         else:
             # add dummy row to the data that will be fill during the analysis
             row_empty = [obs_cluster]
@@ -129,7 +126,7 @@ if MEMBER_DETECTION:
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(clust_data['RAdeg'].data[0], clust_data['DEdeg'].data[0],
                                             clust_data['r2'].data[0] * 2.,
-                                            clust_data['d'].data[0], dist_span=500)
+                                            clust_data['d'].data[0], dist_span=1e3)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -139,9 +136,9 @@ if MEMBER_DETECTION:
                                      distance=1e3 / gaia_data['parallax'] * un.pc)
 
         # processing limits
-        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
+        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.3 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
-        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 400  # for now because of uncertain distances
+        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 900  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
 
         n_in_selection = len(gaia_cluster_sub_r2)
@@ -155,14 +152,15 @@ if MEMBER_DETECTION:
         find_members_class = CLUSTER_MEMBERS(gaia_cluster_sub_r2, clust_data)
         find_members_class.plot_on_sky(path='cluster_pos.png', mark_objects=False)
 
+        # check if proper motion properties of the cluster were already established
         print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
-        for c_rad in [np.float64(clust_data['r2'])]:  # np.linspace(np.float64(clust_data['r1']), np.float64(clust_data['r2']), 2):
-            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=2)
+        for c_rad in [np.float64(clust_data['r2'])]:
+            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=5)
 
         # check if cluster was detected
         if np.sum(np.isfinite(cluster_density_param)) == 0:
-            print ' WARNING: Cluster not recognized from PM data'
+            print ' WARNING: Cluster not recognizable from PM data'
             cluster_obj_found_out.write(cluster_params_table_fits, overwrite=True)
             os.chdir('..')
             continue
@@ -173,16 +171,65 @@ if MEMBER_DETECTION:
                                               cluster_density_param[1:])
 
         # continue with the processing
-        find_members_class.plot_selection_density_pde(path='cluster_pos_pde.png')
+        print 'PM0:', find_members_class.cluster_g2d_params
+        find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm.png', max_sigma=1.)
+        p_m, p_s = find_members_class.initial_distance_cut(path='cluster_sel_2_parasec.png', max_sigma=5.)
+        # TODO: Decision based oon p_s
 
-        print cluster_params_table
+        n_sel_s1 = np.sum(find_members_class.selected_final)
+        print 'PM selected in first step:', n_sel_s1
+        if n_sel_s1 < 10:
+            print ' WARNING: Cluster has a low number of probable members'
+            os.chdir('..')
+            continue
+
+        find_members_class.update_selection_parameters(sel_limit=None)
+        find_members_class.plot_selection_density_pde(path='cluster_pos_pde_pm.png')
+        # TODO: possible to determine min_perc using histogram analysis, something similar to Otsu algorithm
+
+        # complete selection plot four in one
+        find_members_class.plot_selected_complete(path='params_0_1.png')
+        find_members_class.plot_selected_complete_dist(path='params_0_2.png')
+
+        n_stars_init = np.sum(find_members_class.selected_final)
+        d_stars_init = 1e5
+        sel_sigma = 1.5
+        for i_i in range(1, 50):
+            find_members_class.update_selection_parameters(prob_sigma=sel_sigma)  # sel_limit=sel_thr)
+            # complete selection plot four in one
+            n_stars_curr = np.sum(find_members_class.selected_final)
+            if n_stars_curr <= 0:
+                break
+            find_members_class.plot_selected_complete(path='params_'+str(i_i)+'_1.png')
+            find_members_class.plot_selected_complete_dist(path='params_'+str(i_i)+'_2.png')
+            print 'PM :', find_members_class.cluster_g2d_params
+            d_stars_curr = n_stars_init - n_stars_curr
+            print '  ', i_i, n_stars_curr, d_stars_curr, sel_sigma
+
+            if d_stars_curr == 0:
+                # algorithm converged to a solution
+                break
+            if d_stars_curr/n_stars_curr < 0.1:
+                # algorithm starts adding new stars to the cluster
+                break
+
+            d_stars_init = d_stars_curr
+            n_stars_init = n_stars_curr
+
+        # save members to a Table file that will written out
+        for m_s_id in find_members_class.data[find_members_class.selected_final]:
+            cluster_obj_found_out.add_row([m_s_id['source_id'], obs_cluster, m_s_id['ra'], m_s_id['dec'], m_s_id['parsec']])
+
         os.chdir('..')
+        # save cluster results
+        cluster_obj_found_out.write(cluster_fits_out, format='fits', overwrite=True)
+        # save only ra/dec information for determined objects
+        gaia_data[np.in1d(gaia_data['source_id'], cluster_obj_found_out['source_id'])]['source_id', 'ra', 'dec'].write(
+            cluster_fits_out[:-5] + '_pos.fits', format='fits', overwrite=True)
+
         continue
 
-        find_members_class.plot_members(25, path='cluster_pm_multi_sel.png')
-        find_members_class.plot_members(25, path='cluster_pm_multi_n.png', show_n_sel=True)
-        find_members_class.plot_selected_hist(path='selection_hist.png')
-        clust_ok = find_members_class.refine_distances_selection(out_plot=True, path='cluster_parsec.png')
+
         if clust_ok:
             # elipse fitting to the data and search for additional members inside it, discard distant stars in hull
             find_members_class.include_iniside_hull(distance_limits=True, manual_hull=False)
@@ -210,8 +257,4 @@ if MEMBER_DETECTION:
         os.chdir('..')
         print ''  # nicer looking output with blank lines
 
-    # save cluster results
-    cluster_obj_found_out.write(cluster_fits_out, format='fits', overwrite=True)
-    # save only ra/dec information for determined objects
-    gaia_data[np.in1d(gaia_data['source_id'], cluster_obj_found_out['source_id'])]['source_id', 'ra', 'dec'].write(cluster_fits_out[:-5]+'_pos.fits', format='fits', overwrite=True)
 
