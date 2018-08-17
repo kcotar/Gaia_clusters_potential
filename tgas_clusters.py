@@ -29,7 +29,7 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ------------------------------------------
 selected_clusters = ['NGC_6940']
 out_dir_suffix = '_11'
-rerun = False
+rerun = True
 if len(argv) > 1:
     # parse input options
     opts, args = getopt(argv[1:], '', ['clusters=', 'suffix=', 'rerun='])
@@ -41,7 +41,7 @@ if len(argv) > 1:
         if o == '--suffix':
             out_dir_suffix = str(a)
         if o == '--rerun':
-            rerun = int(a)>0
+            rerun = int(a) > 0
 
 
 
@@ -96,7 +96,7 @@ if MEMBER_DETECTION:
             if not rerun:
                 continue
         else:
-            # add dummy row to the data that will be fill during the analysis
+            # add dummy row to the data that will be filled during the analysis
             row_empty = [obs_cluster]
             for ire in range(len(cluster_params_table.colnames)-1):
                 row_empty.append(np.nan)
@@ -156,12 +156,12 @@ if MEMBER_DETECTION:
         print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
         for c_rad in [np.float64(clust_data['r2'])]:
-            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=5)
+            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=7)
 
         # check if cluster was detected
         if np.sum(np.isfinite(cluster_density_param)) == 0:
             print ' WARNING: Cluster not recognizable from PM data'
-            cluster_obj_found_out.write(cluster_params_table_fits, overwrite=True)
+            cluster_params_table.write(cluster_params_table_fits, overwrite=True)
             os.chdir('..')
             continue
         else:
@@ -173,7 +173,8 @@ if MEMBER_DETECTION:
         # continue with the processing
         print 'PM0:', find_members_class.cluster_g2d_params
         find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm.png', max_sigma=1.)
-        p_m, p_s = find_members_class.initial_distance_cut(path='cluster_sel_2_parasec.png', max_sigma=5.)
+        find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm_stdreg.png', plot_std_regions=True)
+        p_m, p_s = find_members_class.initial_distance_cut(path='cluster_sel_2_parasec.png', max_sigma=3.)
         # TODO: Decision based oon p_s
 
         n_sel_s1 = np.sum(find_members_class.selected_final)
@@ -208,10 +209,16 @@ if MEMBER_DETECTION:
 
             if d_stars_curr == 0:
                 # algorithm converged to a solution
+                print '  Converge to a constant number of stars'
                 break
-            if d_stars_curr/n_stars_curr < 0.1:
-                # algorithm starts adding new stars to the cluster
-                break
+            if 1.*d_stars_curr/n_stars_curr < -0.1:
+                if 1.*d_stars_curr/n_stars_curr < -0.2:
+                    # algorithm starts adding too many new stars to the cluster
+                    print '  Too many new stars added to the cluster'
+                    break
+                else:
+                    sel_sigma += 0.1
+                    sel_sigma = min(sel_sigma, 2.0)
 
             d_stars_init = d_stars_curr
             n_stars_init = n_stars_curr
@@ -226,35 +233,9 @@ if MEMBER_DETECTION:
         # save only ra/dec information for determined objects
         gaia_data[np.in1d(gaia_data['source_id'], cluster_obj_found_out['source_id'])]['source_id', 'ra', 'dec'].write(
             cluster_fits_out[:-5] + '_pos.fits', format='fits', overwrite=True)
-
-        continue
-
-
-        if clust_ok:
-            # elipse fitting to the data and search for additional members inside it, discard distant stars in hull
-            find_members_class.include_iniside_hull(distance_limits=True, manual_hull=False)
-            find_members_class.plot_members(path='cluster_pm_multi_sel_final.png', show_final=True)
-            # possible RV refinements
-            clust_ok = find_members_class.refine_distances_selection_RV(out_plot=True, path='cluster_rv.png')
-            # get and store member results
-            members_source_id = find_members_class.get_cluster_members(recompute=False, idx_only=False)
-            find_members_class.plot_on_sky(path='cluster_pos_final.png', mark_objects=True)
-            # add members to the resulting file
-            if np.isscalar(members_source_id):
-                os.chdir('..')
-                continue
-
-            for m_s_id in members_source_id:
-                cluster_obj_found_out.add_row([m_s_id, obs_cluster])
-            # final members selection
-            gaia_cluster_members_final = gaia_cluster_sub_r2[find_members_class.get_cluster_members(recompute=False, idx_only=True)]
-
-            # create HR diagram
-            output_list_objects(gaia_cluster_members_final, clust_center, csv_out_cols_init, 'memebers_data.csv')
-            cluster_hr = HR_DIAGRAM(gaia_cluster_members_final, clust_data[clust_data['Cluster'] == obs_cluster], isochrone=iso, photo_system='Gaia')
-            cluster_hr.plot_HR_diagram(include_isocrone=True, include_rv=True, path='hr_diagram.png')
-
-        os.chdir('..')
-        print ''  # nicer looking output with blank lines
-
+        # TODO: add final cluster parameters to the parameters table and fits file
+        cluster_params_table.write(cluster_params_table_fits, overwrite=True)
+        # cluster_params_table = fill_table(cluster_params_table, obs_cluster,
+        #                                   ['pmra', 'pmdec', 'e_pmra', 'e_pmdec', 'th_pmra'],
+        #                                   cluster_density_param[1:])
 

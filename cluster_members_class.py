@@ -721,24 +721,28 @@ class CLUSTER_MEMBERS:
         self.selected_final = deepcopy(idx_members)
         return idx_members
 
-    def plot_cluster_members_pmprob(self, path='plot.png', min_prob=None, max_sigma=1.):
+    def plot_cluster_members_pmprob(self, path='plot.png', max_sigma=None, plot_std_regions=False):
 
         g_val = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=False)
-        g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + max_sigma*self.cluster_g2d_params[3],
-                                        self.cluster_g2d_params[2] + max_sigma*self.cluster_g2d_params[4],
-                                        self.cluster_g2d_params, pde=False)
 
-        self.selected_final = g_val >= g_val_sigma
-        idx_p = self.selected_final
-        plt.scatter(self.data['pmra'][~idx_p], self.data['pmdec'][~idx_p], lw=0, s=3, c='black', alpha=0.2)
-        plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=3, c='red', alpha=0.2)
-        # plt.scatter(self.data['pmra'], self.data['pmdec'], lw=0, s=2, c='black', alpha=0.2)
-        # for s in [5., 4., 3., 2., 1.]:
-        #     g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + s*self.cluster_g2d_params[3],
-        #                                     self.cluster_g2d_params[2] + s*self.cluster_g2d_params[4],
-        #                                     self.cluster_g2d_params, pde=False)
-        #     idx_p = g_val >= g_val_sigma
-        #     plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=2)
+        if max_sigma is not None:
+            g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + max_sigma * self.cluster_g2d_params[3],
+                                            self.cluster_g2d_params[2] + max_sigma * self.cluster_g2d_params[4],
+                                            self.cluster_g2d_params, pde=False)
+            self.selected_final = g_val >= g_val_sigma
+
+        if not plot_std_regions:
+            idx_p = self.selected_final
+            plt.scatter(self.data['pmra'][~idx_p], self.data['pmdec'][~idx_p], lw=0, s=3, c='black', alpha=0.2)
+            plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=3, c='red', alpha=0.2)
+        else:
+            plt.scatter(self.data['pmra'], self.data['pmdec'], lw=0, s=2, c='black', alpha=0.2)
+            for s in [5., 4., 3., 2., 1.]:
+                g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + s*self.cluster_g2d_params[3],
+                                                self.cluster_g2d_params[2] + s*self.cluster_g2d_params[4],
+                                                self.cluster_g2d_params, pde=False)
+                idx_p = g_val >= g_val_sigma
+                plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=2)
         plt.scatter(self.pm_center[0], self.pm_center[1], lw=0, s=8, marker='*', c='blue')
         plt.xlim(self.pl_xlim)
         plt.ylim(self.pl_ylim)

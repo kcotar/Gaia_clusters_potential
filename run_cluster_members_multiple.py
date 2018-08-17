@@ -13,13 +13,13 @@ selected_clusters = ["NGC_189","NGC_225","ASCC_4","ASCC_5","NGC_381","NGC_752","
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
 
-print 'Total number of stars is '+str(len(selected_clusters))+ ', '+str(n_per_cpu)+' per process'
+print 'Total number of clusters is '+str(len(selected_clusters))+ ', '+str(n_per_cpu)+' per process'
 
 # generate strings to be run
 for i_cpu in range(n_cpu):
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    run_string = 'nohup python tgas_clusters.py --clusters='+','.join(run_on)+' --suffix=_'+str(i_cpu+1)+' > cluster_members_run_'+str(i_cpu+1)+'.txt &'
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --clusters='+','.join(run_on)+' --suffix=_'+str(i_cpu+1)+' > cluster_orbits_run_'+str(i_cpu+1)+'.txt &'
+    run_string = 'nohup python tgas_clusters.py --clusters='+','.join(run_on)+' --suffix=_'+str(i_cpu+1)+' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
+    # run_string = 'nohup python gaia_clusters_sim_dr2.py --clusters='+','.join(run_on)+' --suffix=_'+str(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
     print run_string
     pid = subprocess.Popen(run_string, shell=True)
     print 'PID run:', pid

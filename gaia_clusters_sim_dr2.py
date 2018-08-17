@@ -121,37 +121,34 @@ if SIMULATE_ORBITS:
                     continue
                 gaia_data.write(uotput_file)
 
-	# print gaia_data.colnames
-        # gaia_data['radial_velocity'].name = 'rv'
-        # gaia_data['radial_velocity_error'].name = 'e_rv'
-        # filter only the data with RV values
+
         print 'Gaia all:', len(gaia_data)
-	if RV_ZERO:
-		gaia_data['rv'] = 0.
-		idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
-		# rough filtering on pm values
-		mean_pmra = np.nanmedian(gaia_data['pmra'])
-		mean_pmdec = np.nanmedian(gaia_data['pmdec'])
-		print 'Median PM values', mean_pmra, mean_pmdec
-		idx_pm_use = np.logical_and(np.abs(gaia_data['pmra'] - mean_pmra)<3., np.abs(gaia_data['pmdec'] - mean_pmdec)<3.)
-		print ' Will use PM ok objects:', np.sum(idx_pm_use)
-		gaia_data = gaia_data[idx_pm_use]
-	else:
-		if RV_MEAN_CLESTER_MEMB:
-			idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
-        		idx_members_rv = np.logical_and(np.abs(gaia_data['rv']) > 0., idx_members)
-			rv_med = np.nanmedian(gaia_data['rv'][idx_members_rv])
-			gaia_data['rv'][idx_members] = rv_med
-			print 'Median cluster RV:', rv_med
-        	gaia_data = gaia_data[np.abs(gaia_data['rv']) > 0.]
-        print 'Gaia with RV:', len(gaia_data)
+        if RV_ZERO:
+            gaia_data['rv'] = 0.
+            idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
+            # rough filtering on pm values
+            mean_pmra = np.nanmedian(gaia_data['pmra'])
+            mean_pmdec = np.nanmedian(gaia_data['pmdec'])
+            print 'Median PM values', mean_pmra, mean_pmdec
+            idx_pm_use = np.logical_and(np.abs(gaia_data['pmra'] - mean_pmra)<3., np.abs(gaia_data['pmdec'] - mean_pmdec)<3.)
+            print ' Will use PM ok objects:', np.sum(idx_pm_use)
+            gaia_data = gaia_data[idx_pm_use]
+        else:
+            if RV_MEAN_CLESTER_MEMB:
+                idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
+                idx_members_rv = np.logical_and(np.abs(gaia_data['rv']) > 0., idx_members)
+                rv_med = np.nanmedian(gaia_data['rv'][idx_members_rv])
+                gaia_data['rv'][idx_members] = rv_med
+                print 'Median cluster RV:', rv_med
+            gaia_data = gaia_data[np.abs(gaia_data['rv']) > 0.]
+            print 'Gaia with RV:', len(gaia_data)
 
-        idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
-        print 'Gaia in cluster with RV:', np.sum(idx_members)
+            idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
+            print 'Gaia in cluster with RV:', np.sum(idx_members)
 
-        if np.sum(idx_members) < 3:  # at least 3 points are needed for the construction of cluster volume in the xyz coordinate space
-            os.chdir('..')
-            continue
+            if np.sum(idx_members) < 5:  # at least 3 points are needed for the construction of cluster volume in the xyz coordinate space
+                os.chdir('..')
+                continue
 
         # starrt orbits analysis
         pkl_file_test = 'cluster_simulation_run-step1.pkl'  # TEMP: for faster processing and testing
