@@ -5,7 +5,7 @@ from astropy.table import Table, vstack
 import matplotlib.pyplot as plt
 
 # DATASET 1
-data_dir = '/home/klemen/data4_mount/isochrones/padova_Gaia_DR2_Solar/'
+data_dir = '/home/klemen/data4_mount/isochrones/padova_Gaia_DR2_evolutionary_track/'
 orig_colnames = ['Zini','Age','Mini','Mass','logL','logTe','logg','label','McoreTP','C_O','period0','period1','pmode','Mloss','tau1m','X','Y','Xc','Xn','Xo','Cexcess','Z','mbolmag','Gmag','G_BPmag','G_RPmag']
 get_cols = ['Zini','Age','Mini','Mass','logL','logTe','logg','Z','mbolmag','Gmag','G_BPmag','G_RPmag']
 

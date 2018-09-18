@@ -114,7 +114,7 @@ class CLUSTER_MEMBERS:
 
             print ' Computing density field'
             # TODO: maybe check wider bandwidths
-            stars_density = KernelDensity(bandwidth=1., kernel='epanechnikov').fit(pm_plane)
+            stars_density = KernelDensity(bandwidth=0.5, kernel='epanechnikov').fit(pm_plane)
             density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
             # density_field += np.log(pm_plane.shape[0])
             density_field = np.exp(density_field).reshape(_x.shape) * 1e3  # scale the field for easier use
@@ -163,7 +163,9 @@ class CLUSTER_MEMBERS:
                 # V2
                 # determine ok and reorder by distance
                 max_sigma = 1.3
-                min_amp = np.percentile(density_field, 80.)
+                # hard threshold for min_amp if not achieved by the distribution of stars in the image
+                # determines minimal number of stars inside the kernel
+                min_amp = max(np.percentile(density_field, 80.), np.max(density_field)*0.1)
                 idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
                                         final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
                 idx_ok = np.where(idx_ok)[0]
@@ -191,8 +193,11 @@ class CLUSTER_MEMBERS:
 
             ax[0,1].imshow(density_field_background, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
             ax[0,1].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Fitted pm distribution')
+
+            for i_p in range(final_peaks_pm.shape[0]):
+                ax[0, 1].scatter((final_peaks_pm[i_p, 0] - x_range[0]) / d_xy, (final_peaks_pm[i_p, 1] - y_range[0]) / d_xy, lw=0, s=6, c='C3')
             if idx_peak_sel is not None:
-                ax[0, 1].scatter(peak_coord_init[idx_peak_sel, 1], peak_coord_init[idx_peak_sel, 0], lw=0, s=6, c='C3')
+                ax[0, 1].scatter(peak_coord_init[idx_peak_sel, 1], peak_coord_init[idx_peak_sel, 0], lw=0, s=2, c='black')
 
             im = ax[1,0].imshow(density_field_new, interpolation=None, cmap='viridis', origin='lower', alpha=1.)
             ax[1,0].set(xlim=(x_range - x_range[0]) / d_xy, ylim=(y_range - y_range[0]) / d_xy, ylabel='Residuals after fit, new cluster pm center')
@@ -667,8 +672,12 @@ class CLUSTER_MEMBERS:
         # cov_matrix = np.identity(len(dist_std_vals)) * dist_std_vals**2
         cov_matrix = np.cov(data_vals[self.selected_final].T)
 
-        multi_prob = multivariate_normal.pdf(data_vals, mean=dist_mean_vals, cov=cov_matrix)
-        # multi_prob = multivariate_normal.cdf(-1.*np.abs(data_vals - dist_mean_vals), mean=None, cov=cov_matrix)
+        try:
+            multi_prob = multivariate_normal.pdf(data_vals, mean=dist_mean_vals, cov=cov_matrix)
+            # multi_prob = multivariate_normal.cdf(-1.*np.abs(data_vals - dist_mean_vals), mean=None, cov=cov_matrix)
+        except:
+            print '   WARNING: Problem determinig multi-var normal distribution, no change in cluster members was done.'
+            return self.selected_final
 
         max_sigma = 2.
         eval_param_values = dist_mean_vals + dist_std_vals*np.repeat([np.arange(0, max_sigma+1, 0.5)], n_params, axis=0).T
@@ -721,7 +730,7 @@ class CLUSTER_MEMBERS:
         self.selected_final = deepcopy(idx_members)
         return idx_members
 
-    def plot_cluster_members_pmprob(self, path='plot.png', max_sigma=None, plot_std_regions=False):
+    def plot_cluster_members_pmprob(self, path='plot.png', max_sigma=None, plot_std_regions=False, plot_values=False):
 
         g_val = single_gaussian2D(self.data['pmra'], self.data['pmdec'], self.cluster_g2d_params, pde=False)
 
@@ -731,11 +740,11 @@ class CLUSTER_MEMBERS:
                                             self.cluster_g2d_params, pde=False)
             self.selected_final = g_val >= g_val_sigma
 
-        if not plot_std_regions:
+        if max_sigma is not None:
             idx_p = self.selected_final
             plt.scatter(self.data['pmra'][~idx_p], self.data['pmdec'][~idx_p], lw=0, s=3, c='black', alpha=0.2)
             plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=3, c='red', alpha=0.2)
-        else:
+        elif plot_std_regions:
             plt.scatter(self.data['pmra'], self.data['pmdec'], lw=0, s=2, c='black', alpha=0.2)
             for s in [5., 4., 3., 2., 1.]:
                 g_val_sigma = single_gaussian2D(self.cluster_g2d_params[1] + s*self.cluster_g2d_params[3],
@@ -743,6 +752,9 @@ class CLUSTER_MEMBERS:
                                                 self.cluster_g2d_params, pde=False)
                 idx_p = g_val >= g_val_sigma
                 plt.scatter(self.data['pmra'][idx_p], self.data['pmdec'][idx_p], lw=0, s=2)
+        elif plot_values:
+            plt.scatter(self.data['pmra'], self.data['pmdec'], lw=0, s=2, c=g_val)
+            plt.colorbar()
         plt.scatter(self.pm_center[0], self.pm_center[1], lw=0, s=8, marker='*', c='blue')
         plt.xlim(self.pl_xlim)
         plt.ylim(self.pl_ylim)
@@ -850,7 +862,7 @@ class CLUSTER_MEMBERS:
         fig.suptitle('Number stars: '+str(np.sum(idx_p)))
 
         # ax[0, 0].hist(self.data['ra'][~idx_p], bins=100, color='black', alpha=0.3)
-        ax[0, 0].hist(self.data['ra'][idx_p], bins=100, color='red', alpha=0.3)
+        ax[0, 0].hist(self.data['ra'][idx_p], bins=75, color='red', alpha=0.3)
         ax[0, 0].axvline(self.cluster_pos_params[0], color='red', alpha=0.3)
         ax[0, 0].axvline(self.cluster_pos_params[0] + self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
         ax[0, 0].axvline(self.cluster_pos_params[0] - self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
@@ -858,7 +870,7 @@ class CLUSTER_MEMBERS:
         ax[0, 0].axvline(self.cluster_pos_params[0] - 2.*self.cluster_pos_params[2], color='red', ls='--', alpha=0.3)
 
         # ax[0, 1].hist(self.data['dec'][~idx_p], bins=100, color='black', alpha=0.3)
-        ax[0, 1].hist(self.data['dec'][idx_p], bins=100, color='red', alpha=0.3)
+        ax[0, 1].hist(self.data['dec'][idx_p], bins=75, color='red', alpha=0.3)
         ax[0, 1].axvline(self.cluster_pos_params[1], color='red', alpha=0.3)
         ax[0, 1].axvline(self.cluster_pos_params[1] + self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
         ax[0, 1].axvline(self.cluster_pos_params[1] - self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
@@ -866,7 +878,8 @@ class CLUSTER_MEMBERS:
         ax[0, 1].axvline(self.cluster_pos_params[1] - 2.*self.cluster_pos_params[3], color='red', ls='--', alpha=0.3)
 
         # ax[0, 2].hist(self.data['parsec'][~idx_p], bins=100, color='black', alpha=0.3, range=self.parsec_lim)
-        ax[0, 2].hist(self.data['parsec'][idx_p], bins=100, color='red', alpha=0.3, range=self.parsec_lim)
+        ax[0, 2].hist(self.data['parsec'][idx_p], bins=75, color='red', alpha=0.3,
+                      range=(self.cluster_dist_params[0] - 4.*self.cluster_dist_params[1], self.cluster_dist_params[0] + 4.*self.cluster_dist_params[1]))
         ax[0, 2].axvline(self.cluster_dist_params[0], color='red', alpha=0.3)
         ax[0, 2].axvline(self.cluster_dist_params[0] + self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
         ax[0, 2].axvline(self.cluster_dist_params[0] - self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
@@ -874,7 +887,8 @@ class CLUSTER_MEMBERS:
         ax[0, 2].axvline(self.cluster_dist_params[0] - 2.*self.cluster_dist_params[1], color='red', ls='--', alpha=0.3)
 
         # ax[1, 0].hist(self.data['pmra'][~idx_p], bins=100, color='black', alpha=0.3, range=self.pl_xlim)
-        ax[1, 0].hist(self.data['pmra'][idx_p], bins=100, color='red', alpha=0.3, range=self.pl_xlim)
+        ax[1, 0].hist(self.data['pmra'][idx_p], bins=75, color='red', alpha=0.3,
+                      range=(self.cluster_g2d_params[1] - 4.*self.cluster_g2d_params[3], self.cluster_g2d_params[1] + 4.*self.cluster_g2d_params[3]))
         ax[1, 0].axvline(self.cluster_g2d_params[1], color='red', alpha=0.3)
         ax[1, 0].axvline(self.cluster_g2d_params[1] + self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
         ax[1, 0].axvline(self.cluster_g2d_params[1] - self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
@@ -882,7 +896,8 @@ class CLUSTER_MEMBERS:
         ax[1, 0].axvline(self.cluster_g2d_params[1] - 2.*self.cluster_g2d_params[3], color='red', ls='--', alpha=0.3)
 
         # ax[1, 1].hist(self.data['pmdec'][~idx_p], bins=100, color='black', alpha=0.3, range=self.pl_ylim)
-        ax[1, 1].hist(self.data['pmdec'][idx_p], bins=100, color='red', alpha=0.3, range=self.pl_ylim)
+        ax[1, 1].hist(self.data['pmdec'][idx_p], bins=75, color='red', alpha=0.3,
+                      range=(self.cluster_g2d_params[2] - 4.*self.cluster_g2d_params[4], self.cluster_g2d_params[2] + 4.*self.cluster_g2d_params[4]))
         ax[1, 1].axvline(self.cluster_g2d_params[2], color='red', alpha=0.3)
         ax[1, 1].axvline(self.cluster_g2d_params[2] + self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)
         ax[1, 1].axvline(self.cluster_g2d_params[2] - self.cluster_g2d_params[4], color='red', ls='--', alpha=0.3)

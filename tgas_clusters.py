@@ -66,7 +66,7 @@ iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_sy
 
 cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
 
-output_dir = 'Khar_cluster_initial_Gaia_DR2_'+out_dir_suffix
+output_dir = data_dir+'Gaia_open_clusters_analysis_rerun/Khar_cluster_initial_Gaia_DR2_'+out_dir_suffix
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 
@@ -135,8 +135,13 @@ if MEMBER_DETECTION:
                                      dec=gaia_data['dec'] * un.deg,
                                      distance=1e3 / gaia_data['parallax'] * un.pc)
 
+        # filter out Gaia data that can not be used for PM and/or distance cluster analysis
+        gaia_data = gaia_data[np.isfinite(gaia_data['pmra'])]
+        gaia_data = gaia_data[np.isfinite(gaia_data['parallax'])]
+        print ' Valid data lines:', len(gaia_data)
+
         # processing limits
-        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.3 * un.deg
+        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
         idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 900  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
@@ -156,7 +161,7 @@ if MEMBER_DETECTION:
         print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
         for c_rad in [np.float64(clust_data['r2'])]:
-            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=7)
+            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=12)
 
         # check if cluster was detected
         if np.sum(np.isfinite(cluster_density_param)) == 0:
@@ -174,13 +179,20 @@ if MEMBER_DETECTION:
         print 'PM0:', find_members_class.cluster_g2d_params
         find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm.png', max_sigma=1.)
         find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm_stdreg.png', plot_std_regions=True)
+        find_members_class.plot_cluster_members_pmprob(path='cluster_sel_1_pm_stdvals.png', plot_values=True)
+
+        if np.sum(find_members_class.selected_final) < 5:
+            print ' WARNING: Not enough objects to perform distance filtering.'
+            os.chdir('..')
+            continue
+
         p_m, p_s = find_members_class.initial_distance_cut(path='cluster_sel_2_parasec.png', max_sigma=3.)
-        # TODO: Decision based oon p_s
+        # TODO: Decision based on p_m and p_s shape/values
 
         n_sel_s1 = np.sum(find_members_class.selected_final)
         print 'PM selected in first step:', n_sel_s1
         if n_sel_s1 < 10:
-            print ' WARNING: Cluster has a low number of probable members'
+            print ' WARNING: Cluster has a low number of probable members.'
             os.chdir('..')
             continue
 

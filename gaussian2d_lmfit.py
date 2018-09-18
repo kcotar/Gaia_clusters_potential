@@ -54,8 +54,8 @@ def fit_multi_gaussian2d(z_vals, x_vals, y_vals, peaks_xy, peaks_val,
         fit_param.add('amp'+su, value=peaks_val[i_p], min=0., vary=True)
         fit_param.add('x'+su, value=x_p, min=x_p-xy_vary, max=x_p+xy_vary, vary=vary_position)
         fit_param.add('y'+su, value=y_p, min=y_p-xy_vary, max=y_p+xy_vary, vary=vary_position)
-        fit_param.add('xs'+su, value=1., min=0.1, max=15., vary=True)
-        fit_param.add('ys'+su, value=1., min=0.1, max=15., vary=True)
+        fit_param.add('xs'+su, value=0.2, min=0.05, max=2.5, vary=True)
+        fit_param.add('ys'+su, value=0.2, min=0.05, max=2.5, vary=True)
         fit_param.add('th'+su, value=0., min=-np.pi/2., max=np.pi/2., vary=True)
 
     # perform the actual fit itself

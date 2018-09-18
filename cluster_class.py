@@ -14,6 +14,7 @@ from time import time
 from multiprocessing import Pool
 from functools import partial
 from astropy.io import ascii
+from astropy.table import Table
 np.seterr(invalid='ignore')
 
 
@@ -63,7 +64,12 @@ def _add_galactic_cartesian_data(input_data, reverse=False, gal_coor=True):
     if not gal_coor:
         cartesian_coord = ra_dec.transform_to(coord.Galactic).cartesian
     else:
-        cartesian_coord = ra_dec.transform_to(coord.Galactocentric).cartesian
+        # again same velocities and distances as used by JBH in his paper
+        v_sun = coord.CartesianDifferential([11., 238.+10., 7.25] * un.km / un.s)
+        gc_frame = coord.Galactocentric(galcen_distance=8.2 * un.kpc,
+                                        galcen_v_sun=v_sun,
+                                        z_sun=25 * un.pc)
+        cartesian_coord = ra_dec.transform_to(gc_frame).cartesian
     # store computed positional values back to the
     output_data['x'] = cartesian_coord.x.value
     output_data['y'] = cartesian_coord.y.value
@@ -275,12 +281,13 @@ def _func_g_vect_one(loc_vec_one, loc_members, mass_memb, G_const):
 
 
 def _integrate_orbit(star_data, time_steps=None):
-    orbit = Orbit(vxvv=[star_data['ra'] * un.deg,
-                        star_data['dec'] * un.deg,
-                        1e3 / star_data['parallax'] * un.pc,
-                        star_data['pmra'] * un.mas / un.yr,
-                        star_data['pmdec'] * un.mas / un.yr,
-                        star_data['rv'] * un.km / un.s], radec=True)
+    orbit = Orbit(vxvv=[np.float64(star_data['ra']) * un.deg,
+                        np.float64(star_data['dec']) * un.deg,
+                        1e3 / np.float64(star_data['parallax']) * un.pc,
+                        np.float64(star_data['pmra']) * un.mas / un.yr,
+                        np.float64(star_data['pmdec']) * un.mas / un.yr,
+                        np.float64(star_data['rv']) * un.km / un.s], radec=True,
+                  ro=8.2, vo=238., zo=0.025, solarmotion=[-11., 10., 7.25])  # as used by JBH in his paper on forced oscilations and phase mixing
     orbit.turn_physical_on()
     orbit.integrate(time_steps, MWPotential2014)
     return [orbit.x(time_steps) * 1e3, orbit.y(time_steps) * 1e3, orbit.z(time_steps) * 1e3]
@@ -576,13 +583,14 @@ class CLUSTER:
             self.particle_pos = None
             self.cluster_memb_pos = None
 
-    def determine_orbits_that_cross_cluster(self, method='scipy'):
+    def determine_orbits_that_cross_cluster(self, method='scipy', return_cluster_time=False, verbose=True):
         """
 
         :return:
         """
         # number of time steps that the simulation was run for
-        print 'Determining crossing orbits'
+        if verbose:
+            print 'Determining crossing orbits'
         n_steps = self.particle_pos.shape[0]
         n_parti = self.particle_pos.shape[1]
         # analyse every step
@@ -604,7 +612,10 @@ class CLUSTER:
                 delanuay_surf = Delaunay(self.cluster_memb_pos[i_s, :, :][idx_hull_vert])
                 inside_hull = delanuay_surf.find_simplex(self.particle_pos[i_s, :, :]) >= 0
                 self.final_inside_hull[i_s, :] = np.array(inside_hull)
-        self.particle['time_in_cluster'] = np.sum(self.final_inside_hull, axis=0) * np.abs(self.step_years) / 1e6
+        if return_cluster_time:
+            return np.sum(self.final_inside_hull, axis=0) * np.abs(self.step_years) / 1e6
+        else:
+            self.particle['time_in_cluster'] = np.sum(self.final_inside_hull, axis=0) * np.abs(self.step_years) / 1e6
 
     def get_crossing_objects(self, min_time=None):
         """
@@ -745,11 +756,6 @@ class CLUSTER:
 
         if particles:
             print 'Integrating observed interesting stars around cluster'
-            # pool = Pool(processes=2)  # greatest speedup with 2 processes
-            # _integrate_orbit_partial = partial(_integrate_orbit, time_steps=ts)
-            # orbits_res_all = pool.map(_integrate_orbit_partial, self.particle)
-            # pool.close()
-            # print '  Multi finished'
 
             out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
             for i_part in range(n_part):
@@ -763,6 +769,86 @@ class CLUSTER:
             self.particle_pos = out_data
 
         print 'Integration finished'
+
+    def galpy_mutirun_all(self, members=True, particles=True, total_time=-220e6, step_years=1e4,
+                          n_runs=200, perc_in=50., min_in_time=4e6):
+        """
+
+        :param members:
+        :param particles:
+        :param total_time:
+        :param step_years:
+        :param n_runs:
+        :param perc_in:
+        :param min_in_time:
+        :return:
+        """
+        self.step_years = step_years
+        n_memb = len(self.members)
+        n_part = len(self.particle)
+        n_ts = np.abs(np.int64(total_time / step_years))
+        ts = np.linspace(0., total_time / 1e6, n_ts) * un.Myr
+
+        if members:
+            print 'Integrating orbits of cluster members'
+            out_data = np.ndarray((n_ts, n_memb, 3), dtype=np.float64)
+            for i_memb in range(n_memb):
+                orbit_res_x, orbit_res_y, orbit_res_z = _integrate_orbit(self.members[i_memb], ts)
+                out_data[:, i_memb, 0] = orbit_res_x  # orbit_res.x(ts) * 1e3
+                out_data[:, i_memb, 1] = orbit_res_y  # orbit_res.y(ts) * 1e3
+                out_data[:, i_memb, 2] = orbit_res_z  # orbit_res.z(ts) * 1e3
+            self.cluster_memb_pos = out_data
+
+        if particles:
+            print 'Integrating observed interesting stars around cluster, every star is spawned '+str(n_runs)+' times.'
+
+            out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
+            out_prob = []
+
+            for i_part in range(n_part):
+                if i_part % 10 == 0:
+                    print '  ', i_part
+
+                particle_data = Table(self.particle[i_part])
+
+                out_data_temp = np.ndarray((n_ts, n_runs, 3), dtype=np.float64)
+                ts_ = time()
+                for i_r in range(n_runs):
+                    # generate random particle from the observed data
+                    particle_data_temp = Table(particle_data)
+                    particle_data_temp['parallax'] = np.random.normal(loc=particle_data['parallax'], scale=particle_data['parallax_error'], size=None)
+                    particle_data_temp['pmra'] = np.random.normal(loc=particle_data['pmra'], scale=particle_data['pmra_error'], size=None)
+                    particle_data_temp['pmdec'] = np.random.normal(loc=particle_data['pmdec'], scale=particle_data['pmdec_error'], size=None)
+                    particle_data_temp['rv'] = np.random.normal(loc=particle_data['rv'], scale=particle_data['rv_error'], size=None)
+
+                    # create new instances
+                    orbit_res = _integrate_orbit(particle_data_temp, ts)
+                    out_data_temp[:, i_r, 0] = orbit_res[0]  # orbit_res.x(ts) * 1e3
+                    out_data_temp[:, i_r, 1] = orbit_res[1]  # orbit_res.y(ts) * 1e3
+                    out_data_temp[:, i_r, 2] = orbit_res[2]  # orbit_res.z(ts) * 1e3
+
+                self.particle_pos = out_data_temp
+                particle_instance_intime = self.determine_orbits_that_cross_cluster(return_cluster_time=True, verbose=False)
+                particle_instance_in = particle_instance_intime * 1e6 > min_in_time
+                in_clust_prob = 100. * np.sum(particle_instance_in) / n_runs
+                out_prob.append(in_clust_prob)
+                print '   ', i_part, in_clust_prob, (time()-ts_)/60.
+
+                # select the best run and save it as a final result for this observed star
+                if in_clust_prob > perc_in:
+                    idx_save = np.argmax(particle_instance_in)
+                else:
+                    idx_save = np.argmin(particle_instance_in)
+                out_data[:, i_part, 0] = out_data_temp[:, idx_save, 0]
+                out_data[:, i_part, 1] = out_data_temp[:, idx_save, 1]
+                out_data[:, i_part, 2] = out_data_temp[:, idx_save, 2]
+
+            self.particle_pos = out_data
+
+        print 'Integration finished'
+        if 'out_prob' in locals():
+            self.particle['out_cluster_prob'] = np.array(out_prob)
+            return np.array(out_prob)
 
     # --------------------------------------------------
     # ---------- ONLY TESTS BELLOW THIS POINT ----------
