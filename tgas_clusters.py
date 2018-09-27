@@ -52,7 +52,7 @@ if len(argv) > 1:
 MEMBER_DETECTION = True  # Step 1
 QUERY_DATA = True
 
-data_dir = '/home/klemen/data4_mount/'
+data_dir = '/data4/cotar/'
 khar_dir = data_dir + 'clusters/Kharchenko_2013/'
 
 # read Kharachenko clusters data
@@ -66,13 +66,12 @@ iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_sy
 
 cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
 
-output_dir = data_dir+'Gaia_open_clusters_analysis_rerun/Khar_cluster_initial_Gaia_DR2_'+out_dir_suffix
+output_dir = data_dir+'Gaia_open_clusters_analysis_September/Cluster_members_Gaia_DR2_'+out_dir_suffix
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 
 # ------------------------------------------
 # ----------------  STEP 1  ----------------
-
 # ------------------------------------------
 cluster_params_table_fits = os.getcwd() + '/cluster_params.fits'
 if os.path.isfile(cluster_params_table_fits):
@@ -221,7 +220,7 @@ if MEMBER_DETECTION:
 
             if d_stars_curr == 0:
                 # algorithm converged to a solution
-                print '  Converge to a constant number of stars'
+                print '  Converged to a constant number of stars'
                 break
             if 1.*d_stars_curr/n_stars_curr < -0.1:
                 if 1.*d_stars_curr/n_stars_curr < -0.2:

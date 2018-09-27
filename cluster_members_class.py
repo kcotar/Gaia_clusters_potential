@@ -121,8 +121,8 @@ class CLUSTER_MEMBERS:
 
             # find and evaluate peaks if needed
             peak_coord_init = peak_local_max(density_field, min_distance=int(1. / d_xy), num_peaks=5)
-            # add aditional peak in the middle of the image if only one
-            if peak_coord_init.shape[0] == 1:
+            # add aditional peak in the middle of the image if only one or less
+            if peak_coord_init.shape[0] <= 1:
                 peak_coord_init = np.vstack((peak_coord_init, [int((y_range[1]-y_range[0])/d_xy/2.),
                                                                int((x_range[1]-x_range[0])/d_xy/2.)]))
             # add a peak in te middle of the distribution if it is not present there or in its vicinity
@@ -159,6 +159,7 @@ class CLUSTER_MEMBERS:
             idx_peak_closest = np.argmin(final_peaks_pm_dist)
             idx_peak_sort = np.argsort(final_peaks_pm_dist)
             print '  Number of close peaks detected: ', n_peak_close
+            print final_peaks_pm
             if n_peak_close > 1:
                 # V2
                 # determine ok and reorder by distance
@@ -676,8 +677,16 @@ class CLUSTER_MEMBERS:
             multi_prob = multivariate_normal.pdf(data_vals, mean=dist_mean_vals, cov=cov_matrix)
             # multi_prob = multivariate_normal.cdf(-1.*np.abs(data_vals - dist_mean_vals), mean=None, cov=cov_matrix)
         except:
-            print '   WARNING: Problem determinig multi-var normal distribution, no change in cluster members was done.'
-            return self.selected_final
+            print '   WARNING: Problem determining multi-var normal distribution, no change in cluster members was done.'
+            if prob_thr is None and prob_sigma is None:
+                n_data_vals = len(data_vals)
+                if prob_thr is None and prob_sigma is None:
+                    if return_sigma_vals:
+                        return np.zeros(n_data_vals), np.ones(n_data_vals)
+                    else:
+                        return np.zeros(n_data_vals)
+                else:
+                    return self.selected_final
 
         max_sigma = 2.
         eval_param_values = dist_mean_vals + dist_std_vals*np.repeat([np.arange(0, max_sigma+1, 0.5)], n_params, axis=0).T
