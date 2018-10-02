@@ -63,7 +63,7 @@ PKL_SAVE = False
 USE_GALPY = True
 
 data_dir = '/data4/cotar/'
-cluster_memb_dir = data_dir+'Gaia_open_clusters_analysis_September/'
+cluster_memb_dir = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/'
 
 # read Kharachenko clusters data
 cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits')
@@ -108,6 +108,8 @@ if SIMULATE_ORBITS:
             os.mkdir(out_dir)
         os.chdir(out_dir)
 
+        # increase span with increasing cluster distance
+        d_span = 800. * (1. + clust_data['d'].data[0] / 10e3)  # double span at 10kp
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
             if os.path.isfile(uotput_file):
@@ -117,7 +119,7 @@ if SIMULATE_ORBITS:
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(np.nanmedian(clust_data['ra']), np.nanmedian(clust_data['dec']),
                                             3.5,
-                                            np.nanmedian(clust_data['d']), dist_span=800)
+                                            np.nanmedian(clust_data['d']), dist_span=d_span)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -209,7 +211,7 @@ if SIMULATE_ORBITS:
                                                  distance=1e3 / gaia_test_stars_data['parallax'] * un.pc)
 
             # all stars in a sphere around cluster center
-            idx_dist_cond = gaia_cluster_sub_ra_dec.separation_3d(clust_center) < 800 * un.pc
+            idx_dist_cond = gaia_cluster_sub_ra_dec.separation_3d(clust_center) < d_span * un.pc
             # have low galactic velocity difference towards median galactic velocity
             vel_clust_gal = np.nanmedian(cluster_class.members['d_x','d_y','d_z'].to_pandas().values, axis=0)
             print vel_clust_gal

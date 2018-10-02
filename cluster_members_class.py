@@ -88,13 +88,13 @@ class CLUSTER_MEMBERS:
         pm_plane_orig = np.vstack((data_cur['pmra'].data, data_cur['pmdec'].data)).T
         pm_plane_errors = np.vstack((data_cur['pmra_error'].data, data_cur['pmra_error'].data)).T
         # determine ranges to remove outlying data points
-        x_range = np.percentile(pm_plane_orig[:, 0], [2., 98.])
-        y_range = np.percentile(pm_plane_orig[:, 1], [2., 98.])
+        x_range = np.percentile(pm_plane_orig[:, 0], [1.5, 98.5])
+        y_range = np.percentile(pm_plane_orig[:, 1], [1.5, 98.5])
         d_xy = 0.05
-        if (x_range[1]-x_range[0])/d_xy > 2e3 or (y_range[1]-y_range[0])/d_xy > 2e3:
+        if (x_range[1]-x_range[0])/d_xy > 1e3 or (y_range[1]-y_range[0])/d_xy > 1e3:
             # to reduce processing time in the case of large x or y axis range
             d_xy = 0.1
-        # print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
+        print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
 
         final_list_g2d_params = list([])
         for i_run in np.arange(n_runs)+1:
@@ -128,6 +128,10 @@ class CLUSTER_MEMBERS:
             # add a peak in te middle of the distribution if it is not present there or in its vicinity
             if np.min(np.sqrt(np.sum((peak_coord_init - pm_plane_median_px)**2, axis=1))) > 1./d_xy:
                 peak_coord_init = np.vstack((peak_coord_init, pm_plane_median_px))
+            # add a peak near the previously known peak if none was automaticaly found there
+            if np.min(np.sqrt(np.sum((peak_coord_init - self.pm_center) ** 2, axis=1))) > 5. / d_xy:
+                pm_plane_orig_px = np.int32((self.pm_center - np.array([x_range[0], y_range[0]])) / d_xy)[::-1]
+                peak_coord_init = np.vstack((peak_coord_init, pm_plane_orig_px))
             # image scaling from py to pixel space
             ceter_pm_img_x = (self.pm_center[0] - x_range[0]) / d_xy
             ceter_pm_img_y = (self.pm_center[1] - y_range[0]) / d_xy
@@ -166,9 +170,11 @@ class CLUSTER_MEMBERS:
                 max_sigma = 1.3
                 # hard threshold for min_amp if not achieved by the distribution of stars in the image
                 # determines minimal number of stars inside the kernel
-                min_amp = max(np.percentile(density_field, 80.), np.max(density_field)*0.1)
+                min_amp = max(np.percentile(density_field, 75.), np.max(final_peaks_pm[:, 4])*0.1)
+                print 'Min amp:', min_amp
                 idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
                                         final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
+                print 'Numb ok:', np.sum(idx_ok), idx_ok
                 idx_ok = np.where(idx_ok)[0]
                 # select first arg that is ok
                 if len(idx_ok) > 0:
@@ -775,7 +781,8 @@ class CLUSTER_MEMBERS:
         h_y, h_e = np.histogram(self.data['parsec'][idx_p], bins=50, range=self.parsec_lim)
         h_x = h_e[:-1] + (h_e[1]-h_e[0])/2.
         # fit model to that
-        m_p = np.nanmedian(self.data['parsec'][idx_p])
+        # m_p = np.nanmedian(self.data['parsec'][idx_p])
+        m_p = h_x[np.argmax(h_y)]
 
         fit_model_1 = models.LinearModel()
         pars = fit_model_1.guess(h_y, x=h_x)

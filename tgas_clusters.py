@@ -66,7 +66,7 @@ iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_sy
 
 cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
 
-output_dir = data_dir+'Gaia_open_clusters_analysis_September/Cluster_members_Gaia_DR2_'+out_dir_suffix
+output_dir = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/Cluster_members_Gaia_DR2_'+out_dir_suffix
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 
@@ -116,6 +116,9 @@ if MEMBER_DETECTION:
             os.mkdir(out_dir)
         os.chdir(out_dir)
 
+        # increase span with increasing cluster distance
+        d_span = 900. * (1.+clust_data['d'].data[0]/10e3)  # double span at 10kp
+
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
             if os.path.isfile(uotput_file):
@@ -125,7 +128,7 @@ if MEMBER_DETECTION:
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(clust_data['RAdeg'].data[0], clust_data['DEdeg'].data[0],
                                             clust_data['r2'].data[0] * 2.,
-                                            clust_data['d'].data[0], dist_span=1e3)
+                                            clust_data['d'].data[0], dist_span=d_span)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -142,7 +145,7 @@ if MEMBER_DETECTION:
         # processing limits
         idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
-        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < 900  # for now because of uncertain distances
+        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < d_span  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
 
         n_in_selection = len(gaia_cluster_sub_r2)
@@ -222,14 +225,18 @@ if MEMBER_DETECTION:
                 # algorithm converged to a solution
                 print '  Converged to a constant number of stars'
                 break
-            if 1.*d_stars_curr/n_stars_curr < -0.1:
-                if 1.*d_stars_curr/n_stars_curr < -0.2:
+            frac_change = 1.*d_stars_curr/n_stars_curr
+            if frac_change < -0.05:
+                if frac_change < -0.2:
                     # algorithm starts adding too many new stars to the cluster
                     print '  Too many new stars added to the cluster'
                     break
                 else:
-                    sel_sigma += 0.1
-                    sel_sigma = min(sel_sigma, 2.0)
+                    sel_sigma -= 0.05
+            if frac_change > 0.1:
+                    sel_sigma += 0.05
+            sel_sigma = min(sel_sigma, 2.0)
+            sel_sigma = max(sel_sigma, 1.0)
 
             d_stars_init = d_stars_curr
             n_stars_init = n_stars_curr
