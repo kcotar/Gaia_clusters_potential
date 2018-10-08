@@ -28,7 +28,7 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ----------------  INPUTS  ----------------
 # ------------------------------------------
 selected_clusters = ['NGC_6811']
-out_dir_suffix = '_1'
+out_dir_suffix = ''
 rerun = False
 if len(argv) > 1:
     # parse input options
@@ -118,8 +118,8 @@ if SIMULATE_ORBITS:
                 print ' Sending QUERY to download Gaia data'
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(np.nanmedian(clust_data['ra']), np.nanmedian(clust_data['dec']),
-                                            3.5,
-                                            np.nanmedian(clust_data['d']), dist_span=d_span)
+                                            5.,
+                                            np.nanmedian(clust_data['d']), dist_span=d_span, rv_only=True)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -221,7 +221,7 @@ if SIMULATE_ORBITS:
             # plt.axvline((25. * un.km / un.s).to(un.pc / un.yr).value, color='black')
             # plt.show()
             # plt.close()
-            idx_vel_condition = vel_diff_test_gal <= (20. * un.km / un.s).to(un.pc / un.yr).value
+            idx_vel_condition = vel_diff_test_gal <= (25. * un.km / un.s).to(un.pc / un.yr).value
             # combine conditions
             idx_test = np.logical_and(idx_dist_cond, idx_vel_condition)
 
@@ -253,6 +253,7 @@ if SIMULATE_ORBITS:
         # output results to file
         idx_probable_in = cluster_class.particle['time_in_cluster'] * 1e6 > min_in_clust_time
         pos_crossing_particles = cluster_class.particle[idx_probable_in]
+        pos_outside_particles = cluster_class.particle[~idx_probable_in]
         print 'Number of possible crossing stars:', len(pos_crossing_particles)
         print 'Number of possible GALAH crossing stars:', np.sum(np.in1d(pos_crossing_particles['source_id'], clust_data['source_id']))
 
@@ -263,6 +264,13 @@ if SIMULATE_ORBITS:
         # cluster_hr.plot_HR_diagram(include_isocrone=True, include_rv=True, path='hr_diagram_2_possible.png')
 
         output_list_objects(pos_crossing_particles, clust_center, csv_out_cols, 'possible_ejected-step1.csv')
-        output_list_objects(cluster_class.particle[~idx_probable_in], clust_center, csv_out_cols, 'possible_outside-step1.csv')
-        #cluster_class.plot_cluster_xyz(path=obs_cluster + '_possible_ejected-step1.png', show_possible=True)
-	os.chdir('..')
+        output_list_objects(pos_outside_particles, clust_center, csv_out_cols, 'possible_outside-step1.csv')
+
+        output_list_objects(pos_crossing_particles[np.in1d(pos_crossing_particles['source_id'], galah_data['source_id'])],
+                            clust_center, csv_out_cols, 'possible_ejected-step1_galah.csv')
+        output_list_objects(pos_outside_particles[np.in1d(pos_outside_particles['source_id'], galah_data['source_id'])],
+                            clust_center, csv_out_cols, 'possible_outside-step1_galah.csv')
+
+        cluster_class.plot_cluster_xyz(path=obs_cluster + '_possible_ejected-step1.png',
+                                       show_possible=True, min_cross_time=min_in_clust_time)
+    os.chdir('..')

@@ -34,11 +34,11 @@ def output_list_objects(data, center, out_cols, out_file):
         data_temp[out_cols].write(out_file, format='ascii', comment=False, delimiter='\t', overwrite=True,
                                       fill_values=[(ascii.masked, 'nan')])
 
-        # add some addtional data
-        txt_out = open(out_file, 'a')
-        txt_out.write(' \n')
-        txt_out.write(','.join([str(sid) for sid in out_cols]))
-        txt_out.close()
+        # # add some addtional data - have no idea why this was here
+        # txt_out = open(out_file, 'a')
+        # txt_out.write(' \n')
+        # txt_out.write(','.join([str(sid) for sid in out_cols]))
+        # txt_out.close()
 
 # -------------------------------
 # class functions
@@ -436,16 +436,16 @@ class CLUSTER:
         fig, ax = plt.subplots(2, 2, figsize=(10, 10))
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
-        ax = _add_xyz_points(ax, self.members, c='blue', s=4, compute_limits=True)
+        ax = _add_xyz_points(ax, self.members, c='blue', s=5, compute_limits=True)
         ax[1, 1].scatter(self.members_background['ra'], self.members_background['dec'], lw=0, s=2, c='black')
-        ax[1, 1].scatter(self.members['ra'], self.members['dec'], lw=0, s=4, c='blue')
+        ax[1, 1].scatter(self.members['ra'], self.members['dec'], lw=0, s=3, c='blue')
         ax[1, 1].set(xlabel='RA', ylabel='DEC')
         # crossing objects
         if show_possible and self.final_inside_hull is not None:
             idx_pos_plot = self.particle['time_in_cluster'] >= min_cross_time / 1e6
             if np.sum(idx_pos_plot) > 0:
-                ax = _add_xyz_points(ax, self.particle[idx_pos_plot], c='red', s=4, compute_limits=False)
-                ax[1, 1].scatter(self.particle['ra'][idx_pos_plot], self.particle['dec'][idx_pos_plot], lw=0, s=4, c='red')
+                ax = _add_xyz_points(ax, self.particle[idx_pos_plot], c='red', s=5, compute_limits=False)
+                ax[1, 1].scatter(self.particle['ra'][idx_pos_plot], self.particle['dec'][idx_pos_plot], lw=0, s=3, c='red')
         # plot cosmetics
         plt.suptitle('Cluster: ' + self.id)
         plt.tight_layout()

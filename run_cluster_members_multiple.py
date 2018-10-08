@@ -18,8 +18,8 @@ suffix= ''
 # selected_clusters = ['NGC_129','NGC_189','NGC_225','NGC_366','NGC_188','NGC_381','NGC_663','NGC_6694','NGC_6704','NGC_6709','NGC_6735','NGC_6866','NGC_7142','NGC_7209','NGC_7243','NGC_752','NGC_6940']
 
 # manual selection of the best GALAH cluster candidates
-n_cpu = 3
-selected_clusters = ['NGC_1817','NGC_1901','ASCC_16','ASCC_20','ASCC_21','NGC_2112','NGC_2204','NGC_2232','NGC_2243','NGC_2516','NGC_2548','NGC_2632','NGC_188','IC_2602','NGC_5460','NGC_6253','IC_4665','NGC_6469','NGC_6568','NGC_6583','Melotte_101','Trumpler_20','Ruprecht_145','Ruprecht_147','Berkeley_32','Berkeley_33','Berkeley_73', 'Blanco_1', 'ASCC_89']
+n_cpu = 5
+selected_clusters = ['NGC_1817','NGC_1901','ASCC_16','ASCC_20','ASCC_21','NGC_2112','NGC_2204','NGC_2232','NGC_2243','NGC_2516','NGC_2548','NGC_2632','NGC_188','IC_2602','NGC_5460','NGC_6253','IC_4665','NGC_6469','NGC_6568','NGC_6583','Trumpler_20','Ruprecht_145','Ruprecht_147','Berkeley_32','Berkeley_33','Berkeley_73', 'Blanco_1', 'ASCC_89','Melotte_101']
 suffix = ''
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
@@ -30,8 +30,9 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 # generate strings to be run
 for i_cpu in range(n_cpu):
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    run_string = 'nohup python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
+    # run_string = 'nohup python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
     # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
+    run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu + 1)
     print run_string
     pid = subprocess.Popen(run_string, shell=True)
     print 'PID run:', pid
