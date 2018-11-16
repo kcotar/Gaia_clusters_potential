@@ -1,6 +1,7 @@
 import subprocess
 import os
 import numpy as np
+import time
 
 suffix= ''
 
@@ -29,10 +30,35 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 
 # generate strings to be run
 for i_cpu in range(n_cpu):
+    txt_file = open('run_gaia_clusters.sh', 'w')
+
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    run_string = 'nohup python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
+    run_string = 'python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)
+    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)
     # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu + 1)
     print run_string
-    pid = subprocess.Popen(run_string, shell=True)
-    print 'PID run:', pid
+
+    run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1)
+    # run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu+1)
+    txt_file.write('#!/bin/bash \n')
+    txt_file.write('#\n')
+    txt_file.write('#SBATCH --partition=rude \n')
+    txt_file.write('#SBATCH --qos=rude \n')
+    txt_file.write('#SBATCH --nodes=1 \n')
+    txt_file.write('#SBATCH --tasks-per-node=3 \n')
+    txt_file.write('#SBATCH --mem=10G \n')
+    txt_file.write('#SBATCH --time=1-00:00 \n')
+    txt_file.write('#SBATCH -o '+run_log+'.out \n')
+    txt_file.write('#SBATCH -e '+run_log+'.err \n')
+    txt_file.write('#SBATCH --nodelist=node12 \n')
+    txt_file.write(' \n')
+    txt_file.write(run_string+' \n')
+    txt_file.close()
+
+    # run script in slurm
+    os.system('sbatch run_gaia_clusters.sh')
+
+    # wait few second
+    time.sleep(5)
+
+

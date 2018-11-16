@@ -1,4 +1,6 @@
 import os, imp
+import matplotlib
+matplotlib.use('Agg')
 from sklearn.externals import joblib
 from astropy.table import Table
 from isochrones_class import *
@@ -66,7 +68,7 @@ iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_sy
 
 cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
 
-output_dir = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/Cluster_members_Gaia_DR2_'+out_dir_suffix
+output_dir = data_dir+'Gaia_open_clusters_analysis_November-Asiago/Cluster_members_Gaia_DR2_'+out_dir_suffix
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 

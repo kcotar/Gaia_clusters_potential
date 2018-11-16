@@ -1,4 +1,6 @@
 import os, imp
+import matplotlib
+matplotlib.use('Agg')
 from sklearn.externals import joblib
 from astropy.table import Table, join
 from isochrones_class import *
@@ -63,7 +65,7 @@ PKL_SAVE = False
 USE_GALPY = True
 
 data_dir = '/data4/cotar/'
-cluster_memb_dir = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/'
+cluster_memb_dir = data_dir+'Gaia_open_clusters_analysis_November-Asiago/'
 
 # read Kharachenko clusters data
 cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits')
@@ -273,4 +275,4 @@ if SIMULATE_ORBITS:
 
         cluster_class.plot_cluster_xyz(path=obs_cluster + '_possible_ejected-step1.png',
                                        show_possible=True, min_cross_time=min_in_clust_time)
-    os.chdir('..')
+        os.chdir('..')

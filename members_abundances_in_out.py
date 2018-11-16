@@ -14,9 +14,10 @@ def _prepare_hist_data(d, bins, range, norm=True):
 
 
 data_dir = '/data4/cotar/'
-data_dir_clusters = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/'
+data_dir_clusters = data_dir+'Gaia_open_clusters_analysis_November-Asiago/'
 
-cannon_data = Table.read(data_dir + 'sobject_iraf_iDR2_180325_cannon.fits')
+cannon_data = Table.read(data_dir+'Cannon3.0_SME_20180327_multiple_30_stride2_dropout0.2_alllines_prelu_C-9-5-3_Adam/combined/GALAH_iDR3_ts_DR2_abund_ANN.fits')
+# cannon_data = Table.read(data_dir + 'sobject_iraf_iDR2_180325_cannon.fits')
 gaia_galah = Table.read(data_dir + 'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
 cannon_data = join(cannon_data, gaia_galah, keys='sobject_id', join_type='left')
 
@@ -44,17 +45,20 @@ for sub_dir in glob('*'):
     idx_in = np.in1d(cannon_data['source_id'], g_in['source_id'])
     idx_out = np.in1d(cannon_data['source_id'], g_out['source_id'])
 
-    abund_cols = [c for c in cannon_data.colnames if '_abund' in c and 'e_' not in c and len(c.split('_'))==3]
+    abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_'))==3 and 'Li' not in c]
 
     rg = (-1.75, 1.75)
     bs = 40
 
-    fig, ax = plt.subplots(5, 6, figsize=(15, 10))
+    x_cols_fig = 6
+    y_cols_fig = 5
+    fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
     for i_c, col in enumerate(abund_cols):
         print col
-        x_p = i_c % 6
-        y_p = int(i_c / 6.)
-        idx_val = cannon_data['flag_'+col] >= 0
+        x_p = i_c % x_cols_fig
+        y_p = int(1. * i_c / x_cols_fig)
+        # idx_val = cannon_data['flag_'+col] == 0
+        idx_val = np.isfinite(cannon_data[col])
 
         # plots
         h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
@@ -75,8 +79,10 @@ for sub_dir in glob('*'):
             ax[y_p, x_p].legend()
 
     chdir('..')
-    idx_val = cannon_data['flag_cannon'] >= 0
-    col = 'Fe_H_cannon'
+    # idx_val = cannon_data['flag_cannon'] == 0
+    # col = 'Fe_H_cannon'
+    idx_val = np.isfinite(cannon_data['teff_ann'])
+    col = 'fe_h_ann'
     x_p = -1
     y_p = -1
     h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
@@ -98,7 +104,7 @@ for sub_dir in glob('*'):
                         hspace=0.3, wspace=0.3)
 
     # plt.show()
-    plt.savefig('abundances_'+sub_dir+'_noflag.png', dpi=200)
+    plt.savefig('abundances_'+sub_dir+'_ANN.png', dpi=200)
     plt.close(fig)
 
 
