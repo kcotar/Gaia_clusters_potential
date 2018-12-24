@@ -3,12 +3,12 @@ import urllib2
 from bs4 import BeautifulSoup
 
 # all data
-source_url = 'http://cdn.gea.esac.esa.int/Gaia/gdr2/gaia_source/csv/'
-save_dir = '/home/klemen/data4_mount/Gaia_DR2'
+# source_url = 'http://cdn.gea.esac.esa.int/Gaia/gdr2/gaia_source/csv/'
+# save_dir = '/home/klemen/data4_mount/Gaia_DR2'
 
 # data with rv
-# source_url = 'http://cdn.gea.esac.esa.int/Gaia/gdr2/gaia_source_with_rv/csv/'
-# save_dir = '/home/klemen/data4_mount/Gaia_DR2_RV'
+source_url = 'http://cdn.gea.esac.esa.int/Gaia/gdr2/gaia_source_with_rv/csv/'
+save_dir = '/media/hddd/home2/klemen/Gaia_DR2_RV'
 
 os.system('mkdir '+save_dir)
 os.chdir(save_dir)

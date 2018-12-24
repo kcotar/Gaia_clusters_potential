@@ -1,8 +1,8 @@
 from astropy.table import Table, join, hstack, vstack
 import os
 
-data_dir = '/data4/cotar/Gaia_open_clusters_analysis_October-GALAH-clusters/'
-multi_dir_prefix = data_dir+'Cluster_members_Gaia_DR2__'
+data_dir = '/data4/cotar/Gaia_open_clusters_analysis_November-Asiago/'
+multi_dir_prefix = data_dir+'Cluster_members_Gaia_DR2_'
 n_dirs = 100
 
 fits_file = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'

@@ -110,6 +110,12 @@ if SIMULATE_ORBITS:
             os.mkdir(out_dir)
         os.chdir(out_dir)
 
+        # check if cluster was already processed
+        if os.path.isfile('possible_outside-step1.csv') and not rerun:
+            print 'Cluster already processed'
+            os.chdir('..')
+            continue
+
         # increase span with increasing cluster distance
         d_span = 800. * (1. + clust_data['d'].data[0] / 10e3)  # double span at 10kp
         if QUERY_DATA:
@@ -121,7 +127,7 @@ if SIMULATE_ORBITS:
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(np.nanmedian(clust_data['ra']), np.nanmedian(clust_data['dec']),
                                             5.,
-                                            np.nanmedian(clust_data['d']), dist_span=d_span, rv_only=True)
+                                            np.nanmedian(clust_data['d']), dist_span=d_span, rv_only=False)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
