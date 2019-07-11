@@ -6,13 +6,14 @@ from astropy.table import Table, join
 from isochrones_class import *
 from cluster_class import *
 from cluster_members_class import *
-from abundances_analysis import *
+# from abundances_analysis import *
 from sklearn import mixture
 from gaia_data_queries import *
 imp.load_source('hr_class', '../Binaries_clusters/HR_diagram_class.py')
 from hr_class import *
 from sys import argv
 from getopt import getopt
+from scipy.stats import circmean
 
 
 # ------------------------------------------
@@ -64,15 +65,17 @@ GALAXY_POTENTIAL = True
 PKL_SAVE = False
 USE_GALPY = True
 
-data_dir = '/data4/cotar/'
-cluster_memb_dir = data_dir+'Gaia_open_clusters_analysis_November-Asiago/'
+data_dir = '/shared/ebla/cotar/'
+work_dir = '/shared/data-camelot/cotar/'
 
-# read Kharachenko clusters data
-cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits')
+cluster_memb_dir = work_dir+'GaiaDR2_open_clusters_GALAH_1907/'
+
+# read cluster members
+cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
 
 print 'Reading additional data'
-galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20180327.fits')
-gaia_galah_match = Table.read(data_dir+'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
+galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20190516.fits')
+gaia_galah_match = Table.read(data_dir+'GALAH_iDR3_v1_181221.fits')['sobject_id', 'source_id']
 galah_data = join(galah_data, gaia_galah_match, keys='sobject_id', join_type='left')
 # load isochrones into class
 iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
@@ -103,7 +106,7 @@ if SIMULATE_ORBITS:
             continue
         clust_data = cluster_members[idx_cluster_pos]
 
-        clust_center = coord.ICRS(ra=np.nanmedian(clust_data['ra']) * un.deg,
+        clust_center = coord.ICRS(ra=circmean(clust_data['ra'], low=0., high=360.) * un.deg,
                                   dec=np.nanmedian(clust_data['dec']) * un.deg,
                                   distance=np.nanmedian(clust_data['d']) * un.pc)
         if not os.path.isdir(out_dir):
@@ -117,7 +120,7 @@ if SIMULATE_ORBITS:
             continue
 
         # increase span with increasing cluster distance
-        d_span = 800. * (1. + clust_data['d'].data[0] / 10e3)  # double span at 10kp
+        d_span = 800. * (1. + clust_data['d'].data[0] / 5e3)  # double span at 5kp
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
             if os.path.isfile(uotput_file):
@@ -125,7 +128,7 @@ if SIMULATE_ORBITS:
             else:
                 print ' Sending QUERY to download Gaia data'
                 # limits to retrieve Gaia data
-                gaia_data = get_data_subset(np.nanmedian(clust_data['ra']), np.nanmedian(clust_data['dec']),
+                gaia_data = get_data_subset(circmean(clust_data['ra'], low=0., high=360.), np.nanmedian(clust_data['dec']),
                                             5.,
                                             np.nanmedian(clust_data['d']), dist_span=d_span, rv_only=False)
                 if len(gaia_data) == 0:
@@ -208,6 +211,7 @@ if SIMULATE_ORBITS:
             print 'Step 1 integration'
             output_list_objects(gaia_data_members, clust_center, csv_out_cols_init, 'members_init.csv')
             # TODO: age and meh for those clusters
+            # TODO: values are not yet used to infer mass and isochrone of the cluster and individual stars
             cluster_class = CLUSTER(meh=-0.1, age=200e6, isochrone=iso, id=obs_cluster, reverse=REVERSE_VEL)
             cluster_class.init_members(gaia_data_members)
             cluster_class.init_background(gaia_data[~idx_members])
@@ -244,10 +248,10 @@ if SIMULATE_ORBITS:
             cluster_class.init_test_particle(gaia_test_stars_data[idx_test])
             if USE_GALPY:
                 # cluster_class.galpy_run_all(members=True, particles=True, total_time=-220e6, step_years=1e4)
-                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-220e6, step_years=3e4,
+                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-100e6, step_years=3e4,
                                                 n_runs=100, perc_in=25., min_in_time=min_in_clust_time)
             else:
-                cluster_class.integrate_particle(220e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
+                cluster_class.integrate_particle(100e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
                                                  integrate_stars_pos=True, integrate_stars_vel=True,
                                                  disable_interactions=NO_INTERACTIONS)
 

@@ -6,7 +6,7 @@ from astropy.table import Table
 from isochrones_class import *
 #from cluster_class import *
 from cluster_members_class import *
-from abundances_analysis import *
+# from abundances_analysis import *
 from sklearn import mixture
 from gaia_data_queries import *
 imp.load_source('hr_class', '../Binaries_clusters/HR_diagram_class.py')
@@ -29,8 +29,8 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ------------------------------------------
 # ----------------  INPUTS  ----------------
 # ------------------------------------------
-selected_clusters = ['NGC_6940']
-out_dir_suffix = '_11'
+selected_clusters = ['NGC_188', 'Blanco_1']
+out_dir_suffix = '_01'
 rerun = True
 if len(argv) > 1:
     # parse input options
@@ -54,21 +54,25 @@ if len(argv) > 1:
 MEMBER_DETECTION = True  # Step 1
 QUERY_DATA = True
 
-data_dir = '/data4/cotar/'
-khar_dir = data_dir + 'clusters/Kharchenko_2013/'
+data_dir = '/shared/ebla/cotar/'
+khar_dir = data_dir + 'clusters/Cantat-Gaudin_2018/'
 
-# read Kharachenko clusters data
-clusters = Table.read(khar_dir + 'catalog.csv')
+# read Cantat-Gaudin_(2018) clusters data
+clusters = Table.read(khar_dir + 'table1.fits')
+# remove trailing whitespaces in original cluster names
+for i_l in range(len(clusters)):
+    clusters['cluster'][i_l] = str(clusters['cluster'][i_l]).lstrip().rstrip()
 
 print 'Reading additional data'
-galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20180327.fits')
-gaia_galah_xmatch = Table.read(data_dir+'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
+galah_data = Table.read(data_dir+'sobject_iraf_53_reduced_20190516.fits')
+gaia_galah_xmatch = Table.read(data_dir+'GALAH_iDR3_v1_181221.fits')['sobject_id', 'source_id']
 # load isochrones into class
 iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
 
-cluster_fits_out = 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits'
+cluster_fits_out = 'table1_modified_parameters.fits'
 
-output_dir = data_dir+'Gaia_open_clusters_analysis_November-Asiago/Cluster_members_Gaia_DR2_'+out_dir_suffix
+out_root_dir = '/shared/data-camelot/cotar/'
+output_dir = out_root_dir+'GaiaDR2_open_clusters_GALAH_1907/Cluster_members_Gaia_DR2'+out_dir_suffix
 os.system('mkdir '+output_dir)
 os.chdir(output_dir)
 
@@ -93,8 +97,9 @@ if MEMBER_DETECTION:
         print 'Working on:', obs_cluster
 
         if np.sum(cluster_params_table['cluster'] == obs_cluster) > 0:
-            print 'Already processed to some point'
+            print '  Already processed to some point'
             if not rerun:
+                print '  Quiting as reprocessing is not enabled'
                 continue
         else:
             # add dummy row to the data that will be filled during the analysis
@@ -105,21 +110,24 @@ if MEMBER_DETECTION:
 
         out_dir = obs_cluster + out_dir_suffix
 
-        idx_cluster_pos = np.where(clusters['Cluster'] == obs_cluster)[0]
+        idx_cluster_pos = np.where(clusters['cluster'] == obs_cluster)[0]
         if len(idx_cluster_pos) == 0:
+            print '  No reference data for the selected cluster'
             continue
         clust_data = clusters[idx_cluster_pos]
-        print ' Basic info -->', 'r1:', clust_data['r1'].data[0], 'r2:', clust_data['r2'].data[0], 'pmra:', clust_data['pmRAc'].data[0], 'pmdec:', clust_data['pmDEc'].data[0]
+        print ' Basic info -->', 'r50:', clust_data['r50'][0], 'pmra:', clust_data['pmra'][0], 'pmdec:', clust_data['pmdec'][0]
 
-        clust_center = coord.ICRS(ra=clust_data['RAdeg'] * un.deg,
-                                  dec=clust_data['DEdeg'] * un.deg,
-                                  distance=clust_data['d'] * un.pc)
+        clust_center = coord.ICRS(ra=clust_data['ra'] * un.deg,
+                                  dec=clust_data['dec'] * un.deg,
+                                  distance=clust_data['dmode'] * un.pc)  # Most likely distance
         if not os.path.isdir(out_dir):
             os.mkdir(out_dir)
         os.chdir(out_dir)
 
         # increase span with increasing cluster distance
-        d_span = 900. * (1.+clust_data['d'].data[0]/10e3)  # double span at 10kp
+        d_span = 700. * (1.+clust_data['dmode'].data[0]/5e3)  # double span at 5kp
+        # d_span = clust_data['d95'][0] - clust_data['d05'][0]  # estimated radial size of a cluster
+        print 'Clusters distance and span', clust_data['dmode'][0], d_span
 
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
@@ -128,9 +136,9 @@ if MEMBER_DETECTION:
             else:
                 print ' Sending QUERY to download Gaia data'
                 # limits to retrieve Gaia data
-                gaia_data = get_data_subset(clust_data['RAdeg'].data[0], clust_data['DEdeg'].data[0],
-                                            clust_data['r2'].data[0] * 2.,
-                                            clust_data['d'].data[0], dist_span=d_span)
+                gaia_data = get_data_subset(clust_data['ra'][0], clust_data['dec'][0],
+                                            clust_data['r50'][0] * 3.,
+                                            clust_data['dmode'][0], dist_span=d_span)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -145,13 +153,13 @@ if MEMBER_DETECTION:
         print ' Valid data lines:', len(gaia_data)
 
         # processing limits
-        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r2'] * 1.5 * un.deg
+        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r50'] * 2.5 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
-        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['d']) < d_span  # for now because of uncertain distances
+        idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['dmode']) < d_span  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
 
         n_in_selection = len(gaia_cluster_sub_r2)
-        if n_in_selection < 40:
+        if n_in_selection < 50:
             print ' WARNING: Not enough objects in selection ('+str(n_in_selection)+')'
             cluster_obj_found_out.write(cluster_params_table_fits, overwrite=True)
             os.chdir('..')
@@ -164,7 +172,7 @@ if MEMBER_DETECTION:
         # check if proper motion properties of the cluster were already established
         print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
-        for c_rad in [np.float64(clust_data['r2'])]:
+        for c_rad in [np.float64(clust_data['r50'] * 2.5)]:
             cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=12)
 
         # check if cluster was detected

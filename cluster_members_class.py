@@ -44,11 +44,11 @@ class CLUSTER_MEMBERS:
         self.ref = deepcopy(clust_data)
 
         # some useful computations that are need multiple times
-        self.pm_center = np.array([np.float64(self.ref['pmRAc']), np.float64(self.ref['pmDEc'])])
+        self.pm_center = np.array([np.float64(self.ref['pmra']), np.float64(self.ref['pmdec'])])
         self.data['parsec'] = 1e3/self.data['parallax']
         self.data['center_sep'] = coord.ICRS(ra=self.data['ra'] * un.deg,
-                                             dec=self.data['dec'] * un.deg).separation(coord.ICRS(ra=self.ref['RAdeg'] * un.deg,
-                                                                                                  dec=self.ref['DEdeg'] * un.deg))
+                                             dec=self.data['dec'] * un.deg).separation(coord.ICRS(ra=self.ref['ra'] * un.deg,
+                                                                                                  dec=self.ref['dec'] * un.deg))
 
         # plot parameters
         self.pl_xlim = (np.percentile(self.data['pmra'], 3), np.percentile(self.data['pmra'], 97))
@@ -600,7 +600,7 @@ class CLUSTER_MEMBERS:
         if mark_objects:
             idx_c = self.get_cluster_members()
             plt.scatter(self.data['ra'][idx_c], self.data['dec'][idx_c], lw=0, s=3, c='red', alpha=1.)
-        plt.scatter(self.ref['RAdeg'], self.ref['DEdeg'], lw=0, s=10, marker='*', c='green')
+        plt.scatter(self.ref['ra'], self.ref['dec'], lw=0, s=10, marker='*', c='green')
         plt.savefig(path, dpi=250)
         plt.close()
 

@@ -1,8 +1,9 @@
 import subprocess
 import os
 import numpy as np
+from astropy.table import Table
 
-suffix= ''
+suffix = ''
 
 # n_cpu = 30
 # selected_clusters = [
@@ -18,9 +19,25 @@ suffix= ''
 # selected_clusters = ['NGC_129','NGC_189','NGC_225','NGC_366','NGC_188','NGC_381','NGC_663','NGC_6694','NGC_6704','NGC_6709','NGC_6735','NGC_6866','NGC_7142','NGC_7209','NGC_7243','NGC_752','NGC_6940']
 
 # manual selection of the best GALAH cluster candidates
-n_cpu = 5
-selected_clusters = ['NGC_225','ASCC_4','ASCC_5','Platais_2','NGC_752','NGC_886','NGC_1039','NGC_1027','Melotte_20','ASCC_10','NGC_1333','NGC_1342','ASCC_11','IC_348','Melotte_22','NGC_1528','NGC_1545','NGC_1579','NGC_1582','Platais_3','NGC_1647','NGC_1662','ASCC_12','NGC_1708','NGC_1746','Platais_4','ASCC_13','ASCC_16','ASCC_18','ASCC_19','ASCC_20','ASCC_21','NGC_1981','NGC_1976','NGC_1980','NGC_1977','NGC_2068','NGC_2071','NGC_2112','NGC_2168','NGC_2184','ASCC_22','Platais_6','ASCC_23','NGC_2232','ASCC_24','NGC_2252','NGC_2264','NGC_2281','ASCC_26','NGC_2301','ASCC_28','ASCC_29','ASCC_30','NGC_2319','ASCC_31','NGC_2323','ASCC_34','ASCC_35','ASCC_38','ASCC_41','NGC_2548','NGC_2632','NGC_2682','Melotte_111','ASCC_100','ASCC_101','NGC_6793','ASCC_103','ASCC_104','ASCC_105','ASCC_107','NGC_6828','ASCC_109','ASCC_110','NGC_6882','ASCC_112','NGC_6940','NGC_6991A','NGC_6997','ASCC_113','NGC_7058','NGC_7063','NGC_7092','IC_1396','ASCC_114','IC_5146','NGC_7160','ASCC_115','NGC_7243','ASCC_122','ASCC_123','ASCC_124','ASCC_125','NGC_7438','ASCC_126','ASCC_127','ASCC_128','NGC_7762']
-suffix = ''
+# n_cpu = 5
+# selected_clusters = ['NGC_225','ASCC_4','ASCC_5','Platais_2','NGC_752','NGC_886','NGC_1039','NGC_1027','Melotte_20','ASCC_10','NGC_1333','NGC_1342','ASCC_11','IC_348','Melotte_22','NGC_1528','NGC_1545','NGC_1579','NGC_1582','Platais_3','NGC_1647','NGC_1662','ASCC_12','NGC_1708','NGC_1746','Platais_4','ASCC_13','ASCC_16','ASCC_18','ASCC_19','ASCC_20','ASCC_21','NGC_1981','NGC_1976','NGC_1980','NGC_1977','NGC_2068','NGC_2071','NGC_2112','NGC_2168','NGC_2184','ASCC_22','Platais_6','ASCC_23','NGC_2232','ASCC_24','NGC_2252','NGC_2264','NGC_2281','ASCC_26','NGC_2301','ASCC_28','ASCC_29','ASCC_30','NGC_2319','ASCC_31','NGC_2323','ASCC_34','ASCC_35','ASCC_38','ASCC_41','NGC_2548','NGC_2632','NGC_2682','Melotte_111','ASCC_100','ASCC_101','NGC_6793','ASCC_103','ASCC_104','ASCC_105','ASCC_107','NGC_6828','ASCC_109','ASCC_110','NGC_6882','ASCC_112','NGC_6940','NGC_6991A','NGC_6997','ASCC_113','NGC_7058','NGC_7063','NGC_7092','IC_1396','ASCC_114','IC_5146','NGC_7160','ASCC_115','NGC_7243','ASCC_122','ASCC_123','ASCC_124','ASCC_125','NGC_7438','ASCC_126','ASCC_127','ASCC_128','NGC_7762']
+# suffix = ''
+
+# All C-G 2018 clusters
+n_cpu = 40
+data_dir = '/shared/ebla/cotar/'
+khar_dir = data_dir + 'clusters/Cantat-Gaudin_2018/'
+# read Cantat-Gaudin_(2018) clusters data
+clusters = Table.read(khar_dir + 'table1.fits')
+# remove trailing whitespaces in original cluster names
+selected_clusters = [str(clusters['cluster'][i_l]).lstrip().rstrip() for i_l in range(len(clusters))]
+
+# All GALAH clusters
+n_cpu = 4
+cluster_dir = '/shared/ebla/cotar/clusters/'
+clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
+# remove trailing whitespaces in original cluster names
+selected_clusters = [str(cc).lstrip().rstrip() for cc in np.unique(clusters['cluster'])]
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
@@ -30,8 +47,8 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 # generate strings to be run
 for i_cpu in range(n_cpu):
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    run_string = 'nohup python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
+    # run_string = 'nohup python tgas_clusters.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'_{:02.0f}'.format(i_cpu+1) + ' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
+    run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
     # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu + 1)
     print run_string
     pid = subprocess.Popen(run_string, shell=True)
