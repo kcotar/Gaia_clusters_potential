@@ -13,54 +13,83 @@ def _prepare_hist_data(d, bins, range, norm=True):
     return edges[:-1], heights, width
 
 
-data_dir = '/data4/cotar/'
-data_dir_clusters = data_dir+'Gaia_open_clusters_analysis_November-Asiago/'
+simulation_dir = '/shared/data-camelot/cotar/'
+data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_GALAH_1907/'
 
-cannon_data = Table.read(data_dir+'Cannon3.0_SME_20180327_multiple_30_stride2_dropout0.2_alllines_prelu_C-9-5-3_Adam/combined/GALAH_iDR3_ts_DR2_abund_ANN.fits')
-# cannon_data = Table.read(data_dir + 'sobject_iraf_iDR2_180325_cannon.fits')
-gaia_galah = Table.read(data_dir + 'sobject_iraf_53_gaia.fits')['sobject_id', 'source_id']
-cannon_data = join(cannon_data, gaia_galah, keys='sobject_id', join_type='left')
+data_dir = '/shared/ebla/cotar/'
+cannon_data = Table.read(data_dir+'GALAH_iDR3_main_alpha_190529.fits')
 
-cluster_dir = data_dir_clusters + 'Cluster_orbits_Gaia_DR2_/'
-chdir(cluster_dir)
+# cluster_dir = data_dir_clusters + 'Cluster_orbits_Gaia_DR2_/'
 
-for sub_dir in glob('*'):
+# detemine all posible simulation subdirs
+chdir(data_dir_clusters)
+for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
+    chdir(cluster_dir)
+    print 'Working on clusters in ' + cluster_dir
 
-    if '.png' in sub_dir:
-        continue
+    for sub_dir in glob('*'):
 
-    print sub_dir
-    chdir(sub_dir)
+        if '.png' in sub_dir:
+            continue
 
-    try:
-        g_init = Table.read('members_init_galah.csv', format='ascii', delimiter='\t')
-        g_in = Table.read('possible_ejected-step1_galah.csv', format='ascii', delimiter='\t')
-        g_out = Table.read('possible_outside-step1_galah.csv', format='ascii', delimiter='\t')
-    except:
-        print ' Some Galah lists are missing'
-        chdir('..')
-        continue
+        print sub_dir
+        chdir(sub_dir)
 
-    idx_init = np.in1d(cannon_data['source_id'], g_init['source_id'])
-    idx_in = np.in1d(cannon_data['source_id'], g_in['source_id'])
-    idx_out = np.in1d(cannon_data['source_id'], g_out['source_id'])
+        try:
+            g_init = Table.read('members_init_galah.csv', format='ascii', delimiter='\t')
+            g_in = Table.read('possible_ejected-step1_galah.csv', format='ascii', delimiter='\t')
+            g_out = Table.read('possible_outside-step1_galah.csv', format='ascii', delimiter='\t')
+            chdir('..')
+        except:
+            print ' Some Galah lists are missing'
+            chdir('..')
+            continue
 
-    abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_'))==3 and 'Li' not in c]
+        idx_init = np.in1d(cannon_data['source_id'], g_init['source_id'])
+        idx_in = np.in1d(cannon_data['source_id'], g_in['source_id'])
+        idx_out = np.in1d(cannon_data['source_id'], g_out['source_id'])
 
-    rg = (-1.75, 1.75)
-    bs = 40
+        # abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_')) == 3 and 'Li' not in c]
+        abund_cols = [c for c in cannon_data.colnames if '_fe' in c and 'nr_' not in c and 'e_' not in c and ('I' in c or 'II' in c or 'III' in c)]
 
-    x_cols_fig = 6
-    y_cols_fig = 5
-    fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
-    for i_c, col in enumerate(abund_cols):
-        print col
-        x_p = i_c % x_cols_fig
-        y_p = int(1. * i_c / x_cols_fig)
-        # idx_val = cannon_data['flag_'+col] == 0
-        idx_val = np.isfinite(cannon_data[col])
+        rg = (-1.2, 1.2)
+        bs = 40
 
-        # plots
+        x_cols_fig = 6
+        y_cols_fig = 5
+        fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
+        for i_c, col in enumerate(abund_cols):
+            print col
+            x_p = i_c % x_cols_fig
+            y_p = int(1. * i_c / x_cols_fig)
+            # idx_val = cannon_data['flag_'+col] == 0
+            idx_val = np.isfinite(cannon_data[col])
+
+            # plots
+            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
+            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.2, facecolor='C2', edgecolor=None, label='Field')
+            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C2', label='')
+
+            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_init, idx_val)], bs, rg)
+            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C0', edgecolor=None, label='Initial')
+            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C0', label='')
+
+            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_in, idx_val)], bs, rg)
+            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C1', edgecolor=None, label='Ejected')
+            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C1', label='')
+
+            ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0], xlim=rg, xticks=[-1.5, -0.75, 0, 0.75, 1.5], xticklabels=['-1.5', '', '0', '', '1.5'])
+            ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
+            if i_c == 0:
+                ax[y_p, x_p].legend()
+
+        rg = (-1.5, 1.5)
+        # idx_val = cannon_data['flag_cannon'] == 0
+        # col = 'Fe_H_cannon'
+        idx_val = np.isfinite(cannon_data['teff'])
+        col = 'fe_h'
+        x_p = -1
+        y_p = -1
         h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
         ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.2, facecolor='C2', edgecolor=None, label='Field')
         ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C2', label='')
@@ -73,40 +102,15 @@ for sub_dir in glob('*'):
         ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C1', edgecolor=None, label='Ejected')
         ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C1', label='')
 
-        ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0], xlim=rg, xticks=[-1.5, -0.75, 0, 0.75, 1.5], xticklabels=['-1.5', '', '0', '', '1.5'])
+        ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H', xlim=rg)
         ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-        if i_c == 0:
-            ax[y_p, x_p].legend()
 
+        plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98,
+                            hspace=0.3, wspace=0.3)
+
+        # plt.show()
+        plt.savefig('abundances_'+sub_dir+'_ANN.png', dpi=200)
+        plt.close(fig)
+
+    # go to the directory with all simulations
     chdir('..')
-    # idx_val = cannon_data['flag_cannon'] == 0
-    # col = 'Fe_H_cannon'
-    idx_val = np.isfinite(cannon_data['teff_ann'])
-    col = 'fe_h_ann'
-    x_p = -1
-    y_p = -1
-    h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
-    ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.2, facecolor='C2', edgecolor=None, label='Field')
-    ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C2', label='')
-
-    h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_init, idx_val)], bs, rg)
-    ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C0', edgecolor=None, label='Initial')
-    ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C0', label='')
-
-    h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_in, idx_val)], bs, rg)
-    ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C1', edgecolor=None, label='Ejected')
-    ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C1', label='')
-
-    ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H', xlim=rg)
-    ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-
-    plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98,
-                        hspace=0.3, wspace=0.3)
-
-    # plt.show()
-    plt.savefig('abundances_'+sub_dir+'_ANN.png', dpi=200)
-    plt.close(fig)
-
-
-
-

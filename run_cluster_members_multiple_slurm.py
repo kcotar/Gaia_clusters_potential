@@ -25,20 +25,22 @@ suffix = ''
 # suffix = ''
 
 # All C-G 2018 clusters
-n_cpu = 20
+n_cpu = 10
 data_dir = '/shared/ebla/cotar/'
 khar_dir = data_dir + 'clusters/Cantat-Gaudin_2018/'
 # read Cantat-Gaudin_(2018) clusters data
 clusters = Table.read(khar_dir + 'table1.fits')
 # remove trailing whitespaces in original cluster names
 selected_clusters = [str(clusters['cluster'][i_l]).lstrip().rstrip() for i_l in range(len(clusters))]
+root_suffix = '_ALL'
 
-# All GALAH clusters
+# # All GALAH clusters
 # n_cpu = 4
 # cluster_dir = '/shared/ebla/cotar/clusters/'
 # clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
 # # remove trailing whitespaces in original cluster names
 # selected_clusters = [str(cc).lstrip().rstrip() for cc in np.unique(clusters['cluster'])]
+# root_suffix = '_GALAH'
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
@@ -50,13 +52,12 @@ for i_cpu in range(n_cpu):
     txt_file = open('run_gaia_clusters.sh', 'w')
 
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    run_string = 'python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu + 1)
+    run_string = 'python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
+    # run_string = 'python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
     print run_string
 
-    run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1)
-    # run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu+1)
+    # run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1)
+    run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu+1)
     txt_file.write('#!/bin/bash \n')
     txt_file.write('#\n')
     # txt_file.write('#SBATCH --partition=rude \n')
@@ -70,7 +71,10 @@ for i_cpu in range(n_cpu):
     txt_file.write('#SBATCH -o '+run_log+'.out \n')
     txt_file.write('#SBATCH -e '+run_log+'.err \n')
     txt_file.write('#SBATCH --nodelist=astro01 \n')
-    txt_file.write(' \n')
+    txt_file.write('\n')
+    txt_file.write('export PYTHONHTTPSVERIFY=0 \n')
+    # txt_file.write('export OMP_NUM_THREADS=1 \n')
+    txt_file.write('\n')
     txt_file.write(run_string+' \n')
     txt_file.close()
 
@@ -78,6 +82,7 @@ for i_cpu in range(n_cpu):
     os.system('sbatch run_gaia_clusters.sh')
 
     # wait few second
-    time.sleep(5)
+    if i_cpu < n_cpu-1:
+        time.sleep(90)
 
 

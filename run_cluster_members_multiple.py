@@ -31,6 +31,7 @@ khar_dir = data_dir + 'clusters/Cantat-Gaudin_2018/'
 clusters = Table.read(khar_dir + 'table1.fits')
 # remove trailing whitespaces in original cluster names
 selected_clusters = [str(clusters['cluster'][i_l]).lstrip().rstrip() for i_l in range(len(clusters))]
+root_suffix = '_ALL'
 
 # All GALAH clusters
 n_cpu = 4
@@ -38,6 +39,7 @@ cluster_dir = '/shared/ebla/cotar/clusters/'
 clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
 # remove trailing whitespaces in original cluster names
 selected_clusters = [str(cc).lstrip().rstrip() for cc in np.unique(clusters['cluster'])]
+root_suffix = '_GALAH'
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
@@ -47,9 +49,8 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 # generate strings to be run
 for i_cpu in range(n_cpu):
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
-    # run_string = 'nohup python tgas_clusters.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'_{:02.0f}'.format(i_cpu+1) + ' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
-    run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
-    # run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu + 1)
+    # run_string = 'nohup python tgas_clusters.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix + ' > cluster_members_run_{:02.0f}.txt &'.format(i_cpu+1)
+    run_string = 'nohup python gaia_clusters_sim_dr2.py --r=1 --c=' + ','.join(run_on) + ' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix+' > cluster_orbits_run_{:02.0f}.txt &'.format(i_cpu+1)
     print run_string
     pid = subprocess.Popen(run_string, shell=True)
     print 'PID run:', pid

@@ -30,11 +30,12 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ----------------  INPUTS  ----------------
 # ------------------------------------------
 selected_clusters = ['NGC_188', 'Blanco_1']
+root_dir_suffix = ''
 out_dir_suffix = '_01'
 rerun = True
 if len(argv) > 1:
     # parse input options
-    opts, args = getopt(argv[1:], '', ['clusters=', 'suffix=', 'rerun='])
+    opts, args = getopt(argv[1:], '', ['clusters=', 'suffix=', 'rerun=', 'dir='])
     # set parameters, depending on user inputs
     print opts
     for o, a in opts:
@@ -44,6 +45,8 @@ if len(argv) > 1:
             out_dir_suffix = str(a)
         if o == '--rerun':
             rerun = int(a) > 0
+        if o == '--dir':
+            root_dir_suffix = str(a)
 
 
 
@@ -72,9 +75,15 @@ iso = ISOCHRONES(data_dir+'isochrones/padova_Gaia/isochrones_all.fits', photo_sy
 cluster_fits_out = 'table1_modified_parameters.fits'
 
 out_root_dir = '/shared/data-camelot/cotar/'
-output_dir = out_root_dir+'GaiaDR2_open_clusters_GALAH_1907/Cluster_members_Gaia_DR2'+out_dir_suffix
-os.system('mkdir '+output_dir)
-os.chdir(output_dir)
+os.chdir(out_root_dir)
+
+out_root_dir = 'GaiaDR2_open_clusters_1907'+root_dir_suffix
+os.system('mkdir '+out_root_dir)
+os.chdir(out_root_dir)
+
+out_root_dir = 'Cluster_members_Gaia_DR2'+out_dir_suffix
+os.system('mkdir '+out_root_dir)
+os.chdir(out_root_dir)
 
 # ------------------------------------------
 # ----------------  STEP 1  ----------------
@@ -125,7 +134,7 @@ if MEMBER_DETECTION:
         os.chdir(out_dir)
 
         # increase span with increasing cluster distance
-        d_span = 700. * (1.+clust_data['dmode'].data[0]/5e3)  # double span at 5kp
+        d_span = 800. * (1.+clust_data['dmode'][0]/5e3)  # double span at 5kp
         # d_span = clust_data['d95'][0] - clust_data['d05'][0]  # estimated radial size of a cluster
         print 'Clusters distance and span', clust_data['dmode'][0], d_span
 
@@ -138,7 +147,7 @@ if MEMBER_DETECTION:
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(clust_data['ra'][0], clust_data['dec'][0],
                                             clust_data['r50'][0] * 3.,
-                                            clust_data['dmode'][0], dist_span=d_span)
+                                            clust_data['dmode'][0], dist_span=d_span, login=False, rv_only=False)
                 if len(gaia_data) == 0:
                     os.chdir('..')
                     continue
@@ -153,7 +162,7 @@ if MEMBER_DETECTION:
         print ' Valid data lines:', len(gaia_data)
 
         # processing limits
-        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r50'] * 2.5 * un.deg
+        idx_possible_r2 = gaia_ra_dec.separation(clust_center) < clust_data['r50'] * 3 * un.deg
         gaia_cluster_sub_r2 = gaia_data[idx_possible_r2]
         idx_distance = np.abs(1e3/gaia_cluster_sub_r2['parallax'] - clust_data['dmode']) < d_span  # for now because of uncertain distances
         gaia_cluster_sub_r2 = gaia_cluster_sub_r2[idx_distance]
@@ -172,8 +181,8 @@ if MEMBER_DETECTION:
         # check if proper motion properties of the cluster were already established
         print ' Multi radius Gaussian2D density fit'
         pm_median_all = [np.nanmedian(gaia_data['pmra']), np.nanmedian(gaia_data['pmdec'])]
-        for c_rad in [np.float64(clust_data['r50'] * 2.5)]:
-            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=12)
+        for c_rad in [np.float64(clust_data['r50'] * 3)]:
+            cluster_density_param = find_members_class.perform_selection_density(c_rad, suffix='_{:.3f}'.format(c_rad), n_runs=13)
 
         # check if cluster was detected
         if np.sum(np.isfinite(cluster_density_param)) == 0:

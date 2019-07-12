@@ -164,25 +164,33 @@ class CLUSTER_MEMBERS:
             idx_peak_sort = np.argsort(final_peaks_pm_dist)
             print '  Number of close peaks detected: ', n_peak_close
             print final_peaks_pm
-            if n_peak_close > 1:
-                # V2
-                # determine ok and reorder by distance
-                max_sigma = 1.3
-                # hard threshold for min_amp if not achieved by the distribution of stars in the image
-                # determines minimal number of stars inside the kernel
-                min_amp = max(np.percentile(density_field, 75.), np.max(final_peaks_pm[:, 4])*0.1)
-                print 'Min amp:', min_amp
-                idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
-                                        final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
-                print 'Numb ok:', np.sum(idx_ok), idx_ok
-                idx_ok = np.where(idx_ok)[0]
-                # select first arg that is ok
-                if len(idx_ok) > 0:
-                    idx_peak_sel = idx_peak_sort[idx_ok[0]]
-                else:
-                    idx_peak_sel = None
-            else:
+
+            # new version when using C-G 2018 reference values
+            if n_peak_close > 0:
                 idx_peak_sel = idx_peak_closest
+            else:
+                idx_peak_sel = None
+
+            # NOTE: not needed any more as new reference table has much more precise inital pmra and pmdec values
+            # if n_peak_close > 1:
+            #     # V2
+            #     # determine ok and reorder by distance
+            #     max_sigma = 1.3
+            #     # hard threshold for min_amp if not achieved by the distribution of stars in the image
+            #     # determines minimal number of stars inside the kernel
+            #     min_amp = max(np.percentile(density_field, 75.), np.max(final_peaks_pm[:, 4])*0.1)
+            #     print 'Min amp:', min_amp
+            #     idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
+            #                             final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
+            #     print 'Numb ok:', np.sum(idx_ok), idx_ok
+            #     idx_ok = np.where(idx_ok)[0]
+            #     # select first arg that is ok
+            #     if len(idx_ok) > 0:
+            #         idx_peak_sel = idx_peak_sort[idx_ok[0]]
+            #     else:
+            #         idx_peak_sel = None
+            # else:
+            #     idx_peak_sel = idx_peak_closest
 
             if idx_peak_sel is None:
                 final_list_g2d_params.append(np.full(6, np.nan))
@@ -695,8 +703,9 @@ class CLUSTER_MEMBERS:
                     return self.selected_final
 
         max_sigma = 2.
-        eval_param_values = dist_mean_vals + dist_std_vals*np.repeat([np.arange(0, max_sigma+1, 0.5)], n_params, axis=0).T
-        multi_prob_sigmas = multivariate_normal.pdf(eval_param_values, mean=dist_mean_vals, cov=cov_matrix)
+        if return_sigma_vals:
+            eval_param_values = dist_mean_vals + dist_std_vals * np.repeat([np.arange(0, max_sigma + 1, 0.5)], n_params, axis=0).T
+            multi_prob_sigmas = multivariate_normal.pdf(eval_param_values, mean=dist_mean_vals, cov=cov_matrix)
         # eval_param_values = dist_std_vals * np.repeat([np.arange(0, max_sigma + 1, 0.5)], n_params, axis=0).T
         # multi_prob_sigmas = multivariate_normal.cdf(-1.*np.abs(eval_param_values), mean=None, cov=cov_matrix)
         # print 'Sigma prob', multi_prob_sigmas
@@ -707,11 +716,13 @@ class CLUSTER_MEMBERS:
             else:
                 return multi_prob
         elif prob_sigma > 0:
-            prob_thr_sigma = multivariate_normal.pdf(dist_mean_vals + prob_sigma*dist_std_vals, mean=dist_mean_vals, cov=cov_matrix)
-            # prob_thr_sigma = multivariate_normal.cdf(-1.*np.abs(prob_sigma*dist_std_vals), mean=None, cov=cov_matrix)
-
-            idx_sel = multi_prob >= prob_thr_sigma
-            self.selected_final = deepcopy(idx_sel)
+            try:
+                prob_thr_sigma = multivariate_normal.pdf(dist_mean_vals + prob_sigma*dist_std_vals, mean=dist_mean_vals, cov=cov_matrix)
+                # prob_thr_sigma = multivariate_normal.cdf(-1.*np.abs(prob_sigma*dist_std_vals), mean=None, cov=cov_matrix)
+                idx_sel = multi_prob >= prob_thr_sigma
+                self.selected_final = deepcopy(idx_sel)
+            except:
+                print '   WARNING: Problem determining prob_thr_sigma, no change in cluster members was done.'
         else:
             idx_sel = multi_prob >= prob_thr / 100.
             self.selected_final = deepcopy(idx_sel)
