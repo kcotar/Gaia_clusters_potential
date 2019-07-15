@@ -1,7 +1,8 @@
 from astroquery.gaia import Gaia
 
 
-def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span=None, rv_only=False, login=False):
+def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span=None, rv_only=False,
+                    login=False, login_path='/shared/ebla/cotar/'):
     if dist_span is not None:
         max_parallax = 1e3/(max(dist-dist_span, 1.))
         min_parallax = 1e3/(dist+dist_span)
@@ -15,12 +16,12 @@ def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span=None, rv_only=Fals
                  "AND CONTAINS(POINT('ICRS',gaiadr2.gaia_source.ra,gaiadr2.gaia_source.dec),CIRCLE('ICRS',{:.5f},{:.5f},{:.5f}))=1 ".format(ra_deg, dec_deg, rad_deg)
     if rv_only:
         gaia_query += 'AND (radial_velocity IS NOT NULL) '
-    # print ' QUERY:', gaia_quer
+    # print ' QUERY:', gaia_query
     try:
         if login:
             # login enables unlimited asynchronous download of data
             print ' Gaia login initiated'
-            Gaia.login(credentials_file='gaia_archive_login.txt')
+            Gaia.login(credentials_file=login_path + 'gaia_archive_login.txt')
         # disable dump as results will be saved to a custom location later on in the analysis code
         gaia_job = Gaia.launch_job_async(gaia_query, dump_to_file=False)
         gaia_data = gaia_job.get_results()

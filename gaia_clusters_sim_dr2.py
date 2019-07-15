@@ -71,7 +71,9 @@ USE_GALPY = True
 data_dir = '/shared/ebla/cotar/'
 work_dir = '/shared/data-camelot/cotar/'
 
-cluster_memb_dir = work_dir+'GaiaDR2_open_clusters_GALAH_1907' + root_dir_suffix + '/'
+root_dir = 'GaiaDR2_open_clusters_1907' + root_dir_suffix
+os.system('mkdir ' + root_dir)
+cluster_memb_dir = work_dir + root_dir + '/'
 
 # read cluster members list produced by our analysis
 cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
@@ -205,16 +207,17 @@ if SIMULATE_ORBITS:
             print 'RV members cuts'
             rv_clust_med = np.nanmedian(gaia_data_members['rv'])
             rv_clust_std = np.nanstd(gaia_data_members['rv'])
-            plt.hist(gaia_data_members['rv'], bins=50)
-            plt.axvline(rv_clust_med, color='black')
-            plt.axvline(rv_clust_med - 5., color='black', ls='--')
-            plt.axvline(rv_clust_med + 5., color='black', ls='--')
-            plt.axvline(rv_clust_med - rv_clust_std, color='red', ls='--')
-            plt.axvline(rv_clust_med + rv_clust_std, color='red', ls='--')
+            plt.hist(gaia_data_members['rv'], bins=50, label='')
+            plt.axvline(rv_clust_med, color='black', label='Median')
+            plt.axvline(rv_clust_med - 5., color='black', ls='--', label='Used limit')
+            plt.axvline(rv_clust_med + 5., color='black', ls='--', label='')
+            plt.axvline(rv_clust_med - rv_clust_std, color='red', ls='--', label='1 sigma')
+            plt.axvline(rv_clust_med + rv_clust_std, color='red', ls='--', label='')
+            plt.legend()
             plt.tight_layout()
             plt.savefig('members_init_rv.png', dpi=200)
             plt.close()
-            # filter outlying rv values
+            # filter outlying cluster members by rv values
             gaia_data_members = gaia_data_members[np.logical_and(gaia_data_members['rv'] >= rv_clust_med - 5.,
                                                                  gaia_data_members['rv'] <= rv_clust_med + 5.)]
             if len(gaia_data_members) < 5:
@@ -262,10 +265,10 @@ if SIMULATE_ORBITS:
             cluster_class.init_test_particle(gaia_test_stars_data[idx_test])
             if USE_GALPY:
                 # cluster_class.galpy_run_all(members=True, particles=True, total_time=-220e6, step_years=1e4)
-                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-100e6, step_years=3e4,
+                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-120e6, step_years=3e4,
                                                 n_runs=100, perc_in=25., min_in_time=min_in_clust_time)
             else:
-                cluster_class.integrate_particle(100e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
+                cluster_class.integrate_particle(120e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
                                                  integrate_stars_pos=True, integrate_stars_vel=True,
                                                  disable_interactions=NO_INTERACTIONS)
 

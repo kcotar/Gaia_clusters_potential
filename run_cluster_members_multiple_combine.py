@@ -1,7 +1,7 @@
 from astropy.table import Table, join, hstack, vstack
 import os
 
-data_dir = '/shared/data-camelot/cotar/GaiaDR2_open_clusters_GALAH_1907/'
+data_dir = '/shared/data-camelot/cotar/GaiaDR2_open_clusters_1907_GALAH/'
 multi_dir_prefix = data_dir+'Cluster_members_Gaia_DR2_'
 n_dirs = 100
 
