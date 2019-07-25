@@ -65,7 +65,7 @@ else:
     clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
     # remove trailing whitespaces in original cluster names
     selected_clusters = [str(cc).lstrip().rstrip() for cc in np.unique(clusters['cluster'])]
-    root_suffix = '_GALAH'
+    root_suffix = '_GALAH_CGmebers'
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4

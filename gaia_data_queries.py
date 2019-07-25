@@ -20,6 +20,7 @@ def get_data_subset(ra_deg, dec_deg, rad_deg, dist, dist_span=None, rv_only=Fals
     try:
         if login:
             # login enables unlimited asynchronous download of data
+            # NOTE: only up to 20 GB in total - needs manual deletition of data in the Gaia portal
             print ' Gaia login initiated'
             Gaia.login(credentials_file=login_path + 'gaia_archive_login.txt')
         # disable dump as results will be saved to a custom location later on in the analysis code

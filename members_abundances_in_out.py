@@ -6,6 +6,8 @@ from glob import glob
 from astropy.table import Table, join
 from os import chdir
 from scipy.stats import norm as gauss_norm
+from sys import argv
+from getopt import getopt
 
 
 def _prepare_pdf_data(means, stds, range, norm=True):
@@ -30,25 +32,41 @@ def _prepare_hist_data(d, bins, range, norm=True):
 
 
 simulation_dir = '/shared/data-camelot/cotar/'
-data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_1907_GALAH_CGmembers/'
+data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_1907_GALAH_CGmebers/'
 
 data_dir = '/shared/ebla/cotar/'
 USE_DR3 = True
+Q_FLAGS = False
+suffix = ''
+
+if len(argv) > 1:
+    # parse input options
+    opts, args = getopt(argv[1:], '', ['dr3=', 'suffix=', 'flags='])
+    # set parameters, depending on user inputs
+    print opts
+    for o, a in opts:
+        if o == '--dr3':
+            USE_DR3 = int(a) > 0
+        if o == '--suffix':
+            suffix += str(a)
+        if o == '--flags':
+            Q_FLAGS = int(a) > 0
 
 if USE_DR3:
     cannon_data = Table.read(data_dir+'GALAH_iDR3_main_alpha_190529.fits')
     fe_col = 'fe_h'
     teff_col = 'teff'
-    suffix = '_DR3'
+    suffix += '_DR3'
 else:
     cannon_data = Table.read(data_dir+'sobject_iraf_iDR2_180325_cannon.fits')
     gaia_data = Table.read(data_dir+'sobject_iraf_53_gaia.fits')['source_id', 'sobject_id']
     cannon_data = join(cannon_data, gaia_data, keys='sobject_id', join_type='inner')
     fe_col = 'Fe_H_cannon'
     teff_col = 'Teff_cannon'
-    suffix = '_DR2'
+    suffix += '_DR2'
 
-# cluster_dir = data_dir_clusters + 'Cluster_orbits_Gaia_DR2_/'
+if Q_FLAGS:
+    suffix += '_flag0'
 
 # detemine all posible simulation subdirs
 chdir(data_dir_clusters)
@@ -93,7 +111,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
         else:
             abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_')) == 3]
 
-        rg = (-1.2, 1.2)
+        rg = (-1.0, 1.0)
         bs = 40
 
         x_cols_fig = 7
@@ -143,8 +161,11 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
             print col
             x_p = i_c % x_cols_fig
             y_p = int(1. * i_c / x_cols_fig)
-            # idx_val = cannon_data['flag_'+col] == 0
+
             idx_val = np.isfinite(cannon_data[col])
+            if Q_FLAGS and not USE_DR3:
+                # Elements in DR3 (MgI, SiI, CaI, TiI, TiII ...) are only computed if at least one unflagged line was available
+                idx_val = np.logical_and(idx_val, cannon_data['flag_'+col] == 0)
 
             # plots
             h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
@@ -164,10 +185,11 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
             if i_c == 0:
                 ax[y_p, x_p].legend()
 
-        rg = (-1.5, 1.5)
-        # idx_val = cannon_data['flag_cannon'] == 0
-        # col = 'Fe_H_cannon'
+        rg = (-1.7, 0.5)
         idx_val = np.isfinite(cannon_data[teff_col])
+        if Q_FLAGS and not USE_DR3:
+            idx_val = np.logical_and(idx_val, cannon_data['flag_' + col] == 0)
+
         x_p = -1
         y_p = -1
         h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[fe_col][np.logical_and(idx_out, idx_val)], bs, rg)
