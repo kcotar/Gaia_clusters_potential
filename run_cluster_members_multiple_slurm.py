@@ -43,7 +43,7 @@ if len(argv) > 1:
 # suffix = ''
 
 if not galah_clusters:
-    # All C-G 2018 clusters
+    # All C-G 2018 clusters in their published paper
     if run_membership:
         n_cpu = 10
     else:
@@ -56,7 +56,7 @@ if not galah_clusters:
     selected_clusters = [str(clusters['cluster'][i_l]).lstrip().rstrip() for i_l in range(len(clusters))]
     root_suffix = '_ALL'
 else:
-    # All GALAH clusters
+    # All GALAH clusters - as determined by Janez and Ghayandi that they were observed
     if run_membership:
         n_cpu = 4
     else:
@@ -74,10 +74,15 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 
 # generate strings to be run
 for i_cpu in range(n_cpu):
-    sh_file = 'run_gaia_clusters' + root_suffix + '.sh'
+    sh_file = 'run_gaia_clusters' + root_suffix + '_{:02.0f}.sh'.format(i_cpu+1)
     txt_file = open(sh_file, 'w')
 
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
+    if len(run_on) <= 0:
+        # skipp this empty selection - may happen when number of object per cpu is small
+        print ' Zero clusters for cpu {:02.0f}'.format(i_cpu+1)
+        continue
+
     if run_membership:
         run_string = 'python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1) + root_suffix
@@ -98,7 +103,7 @@ for i_cpu in range(n_cpu):
     else:
         txt_file.write('#SBATCH --tasks-per-node=2 \n')
     txt_file.write('#SBATCH --mem=15G \n')
-    txt_file.write('#SBATCH --time=2-00:00 \n')
+    txt_file.write('#SBATCH --time=6-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')
     txt_file.write('#SBATCH --nodelist=astro01 \n')
@@ -114,4 +119,4 @@ for i_cpu in range(n_cpu):
 
     # wait few second
     if i_cpu < n_cpu-1:
-        time.sleep(60)
+        time.sleep(5)

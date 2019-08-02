@@ -32,7 +32,7 @@ def output_list_objects(data, center, out_cols, out_file):
         data_temp['3d_dist'] = data_ra_dec.separation_3d(center)
         # output results
         data_temp[out_cols].write(out_file, format='ascii', comment=False, delimiter='\t', overwrite=True,
-                                      fill_values=[(ascii.masked, 'nan')])
+                                            fill_values=[(ascii.masked, 'nan')])
 
         # # add some addtional data - have no idea why this was here
         # txt_out = open(out_file, 'a')
@@ -549,7 +549,7 @@ class CLUSTER:
         :param disable_interactions:
         :return:
         """
-        self.step_years = step_years
+        self.step_years = deepcopy(step_years)
         #
         pos_init = _data_stack(self.particle, ['x', 'y', 'z'])
         vel_init = _data_stack(self.particle, ['d_x', 'd_y', 'd_z'])
@@ -771,7 +771,7 @@ class CLUSTER:
         print 'Integration finished'
 
     def galpy_mutirun_all(self, members=True, particles=True, total_time=-220e6, step_years=1e4,
-                          n_runs=200, perc_in=50., min_in_time=4e6):
+                          n_runs=200, perc_in=50., min_in_time=4e6, verbose=True):
         """
 
         :param members:
@@ -783,7 +783,7 @@ class CLUSTER:
         :param min_in_time:
         :return:
         """
-        self.step_years = step_years
+        self.step_years = deepcopy(step_years)
         n_memb = len(self.members)
         n_part = len(self.particle)
         n_ts = np.abs(np.int64(total_time / step_years))
@@ -806,8 +806,8 @@ class CLUSTER:
             out_prob = []
 
             for i_part in range(n_part):
-                if i_part % 10 == 0:
-                    print '  ', i_part
+                if i_part % 50 == 0 and verbose:
+                    print i_part
 
                 particle_data = Table(self.particle[i_part])
 
@@ -823,6 +823,7 @@ class CLUSTER:
 
                     # create new instances
                     orbit_res = _integrate_orbit(particle_data_temp, ts)
+
                     out_data_temp[:, i_r, 0] = orbit_res[0]  # orbit_res.x(ts) * 1e3
                     out_data_temp[:, i_r, 1] = orbit_res[1]  # orbit_res.y(ts) * 1e3
                     out_data_temp[:, i_r, 2] = orbit_res[2]  # orbit_res.z(ts) * 1e3
@@ -830,24 +831,30 @@ class CLUSTER:
                 self.particle_pos = out_data_temp
                 particle_instance_intime = self.determine_orbits_that_cross_cluster(return_cluster_time=True, verbose=False)
                 particle_instance_in = particle_instance_intime * 1e6 > min_in_time
+                # determine percentage of runs when orbit is inside the cluster for at least the determined time
                 in_clust_prob = 100. * np.sum(particle_instance_in) / n_runs
                 out_prob.append(in_clust_prob)
-                print '   ', i_part, in_clust_prob, (time()-ts_)/60.
+                if verbose:
+                    print ' {:5.0f}   {:5.1f}   {:5.1f}   {:5.1f}     {:0.3f}'.format(i_part + 1,
+                                                                                      np.nanmax(particle_instance_intime),
+                                                                                      np.nanmedian(particle_instance_intime),
+                                                                                      in_clust_prob,
+                                                                                      (time() - ts_) / 60.)
 
-                # select the best run and save it as a final result for this observed star
-                if in_clust_prob > perc_in:
-                    idx_save = np.argmax(particle_instance_in)
-                else:
-                    idx_save = np.argmin(particle_instance_in)
+                # Select the best run and save it as a final result for this observed star
+                # Select an incarnation that lasts the longest inside the cluster
+                idx_save = np.argmax(particle_instance_intime)
+
                 out_data[:, i_part, 0] = out_data_temp[:, idx_save, 0]
                 out_data[:, i_part, 1] = out_data_temp[:, idx_save, 1]
                 out_data[:, i_part, 2] = out_data_temp[:, idx_save, 2]
 
+            # save all orbits that remain inside the cluster volume for the longest time
             self.particle_pos = out_data
 
         print 'Integration finished'
         if 'out_prob' in locals():
-            self.particle['out_cluster_prob'] = np.array(out_prob)
+            self.particle['in_cluster_prob'] = np.array(out_prob)
             return np.array(out_prob)
 
     # --------------------------------------------------

@@ -30,7 +30,7 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ------------------------------------------
 # ----------------  INPUTS  ----------------
 # ------------------------------------------
-selected_clusters = ['Blanco_1', 'NGC_188', 'NGC_1817_orbits']
+selected_clusters = ['Blanco_1', 'NGC_188', 'NGC_1817']
 root_dir_suffix = ''
 out_dir_suffix = ''
 rerun = False
@@ -50,7 +50,7 @@ if len(argv) > 1:
             root_dir_suffix = str(a)
 
 csv_out_cols_init = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag']
-csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag', 'time_in_cluster', 'ang_dist', '3d_dist', 'out_cluster_prob']
+csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag', 'ang_dist', '3d_dist', 'time_in_cluster', 'in_cluster_prob']
 
 
 
@@ -135,7 +135,7 @@ if SIMULATE_ORBITS:
             continue
 
         # increase span with increasing cluster distance
-        d_span = 800. * (1. + clust_data['d'].data[0] / 5e3)  # double span at 5kp
+        d_span = 900. * (1. + clust_data['d'].data[0] / 5e3)  # double span at 5kp
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
             if os.path.isfile(uotput_file):
@@ -202,7 +202,9 @@ if SIMULATE_ORBITS:
                 continue
 
         # start orbits analysis
-        min_in_clust_time = 5e6
+        min_in_clust_time = 0.4e6
+        min_perc_in = 33.
+
         pkl_file_test = 'cluster_simulation_run-step1.pkl'  # TEMP: for faster processing and testing
         if not os.path.isfile(pkl_file_test):
             gaia_data_members = gaia_data[idx_members]
@@ -241,8 +243,6 @@ if SIMULATE_ORBITS:
                                                  dec=gaia_test_stars_data['dec'] * un.deg,
                                                  distance=1e3 / gaia_test_stars_data['parallax'] * un.pc)
 
-            # all stars in a sphere around cluster center
-            idx_dist_cond = gaia_cluster_sub_ra_dec.separation_3d(clust_center) < d_span * un.pc
             # have low galactic velocity difference towards median galactic velocity
             vel_clust_gal = np.nanmedian(cluster_class.members['d_x','d_y','d_z'].to_pandas().values, axis=0)
             print vel_clust_gal
@@ -254,27 +254,27 @@ if SIMULATE_ORBITS:
             # plt.close()
             idx_vel_condition = vel_diff_test_gal <= (50. * un.km / un.s).to(un.pc / un.yr).value
             # combine conditions
-            idx_test = np.logical_and(idx_dist_cond, idx_vel_condition)
+            idx_test = idx_vel_condition
 
             n_test = np.sum(idx_test)
             print 'Number of all stars in cluster vicinity:', len(cluster_class.members_background)
             print 'Number of test stars in cluster vicinity:', n_test
             if n_test <= 0:
-                print '  WARNING: Not enough stars in vicinity to perform any orbit integration simulation.'
+                print '  WARNING: Not enough test stars in vicinity to perform any orbit integration simulation.'
                 os.chdir('..')
                 continue
 
             cluster_class.init_test_particle(gaia_test_stars_data[idx_test])
             if USE_GALPY:
                 # cluster_class.galpy_run_all(members=True, particles=True, total_time=-220e6, step_years=1e4)
-                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-120e6, step_years=3e4,
-                                                n_runs=100, perc_in=25., min_in_time=min_in_clust_time)
+                in_clust_prob = cluster_class.galpy_mutirun_all(members=True, particles=True, total_time=-120e6, step_years=2e4,
+                                                                n_runs=250, perc_in=min_perc_in, min_in_time=min_in_clust_time)
             else:
-                cluster_class.integrate_particle(120e6, step_years=1e4, include_galaxy_pot=GALAXY_POTENTIAL,
+                cluster_class.integrate_particle(120e6, step_years=2e4, include_galaxy_pot=GALAXY_POTENTIAL,
                                                  integrate_stars_pos=True, integrate_stars_vel=True,
                                                  disable_interactions=NO_INTERACTIONS)
 
-            cluster_class.determine_orbits_that_cross_cluster()
+            cluster_class.determine_orbits_that_cross_cluster(return_cluster_time=False)
             if PKL_SAVE:
                 joblib.dump(cluster_class, pkl_file_test)
         else:
@@ -282,7 +282,9 @@ if SIMULATE_ORBITS:
         #cluster_class.plot_cluster_xyz_movement(path='orbits_integration_all-step1.png')
 
         # output results to file
-        idx_probable_in = cluster_class.particle['time_in_cluster'] * 1e6 > min_in_clust_time
+        # select all possible - futher refiment will be done in plotting and abundance detemination routines
+        idx_probable_in = cluster_class.particle['in_cluster_prob'] * 1e6 > 0.
+
         pos_crossing_particles = cluster_class.particle[idx_probable_in]
         pos_outside_particles = cluster_class.particle[~idx_probable_in]
         print 'Number of possible crossing stars:', len(pos_crossing_particles)
