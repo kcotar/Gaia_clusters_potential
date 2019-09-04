@@ -65,7 +65,7 @@ else:
     clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
     # remove trailing whitespaces in original cluster names
     selected_clusters = [str(cc).lstrip().rstrip() for cc in np.unique(clusters['cluster'])]
-    root_suffix = '_GALAH_CGmebers'
+    root_suffix = '_GALAH'
 
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
@@ -75,7 +75,6 @@ print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_
 # generate strings to be run
 for i_cpu in range(n_cpu):
     sh_file = 'run_gaia_clusters' + root_suffix + '_{:02.0f}.sh'.format(i_cpu+1)
-    txt_file = open(sh_file, 'w')
 
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
     if len(run_on) <= 0:
@@ -91,6 +90,7 @@ for i_cpu in range(n_cpu):
         run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu + 1) + root_suffix
     print run_string
 
+    txt_file = open(sh_file, 'w')
     txt_file.write('#!/bin/bash \n')
     txt_file.write('#\n')
     # txt_file.write('#SBATCH --partition=rude \n')
@@ -103,7 +103,7 @@ for i_cpu in range(n_cpu):
     else:
         txt_file.write('#SBATCH --tasks-per-node=2 \n')
     txt_file.write('#SBATCH --mem=15G \n')
-    txt_file.write('#SBATCH --time=6-00:00 \n')
+    txt_file.write('#SBATCH --time=10-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')
     txt_file.write('#SBATCH --nodelist=astro01 \n')

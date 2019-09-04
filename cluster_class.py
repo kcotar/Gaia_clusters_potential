@@ -15,6 +15,7 @@ from multiprocessing import Pool
 from functools import partial
 from astropy.io import ascii
 from astropy.table import Table
+from astropy.wcs import WCS
 np.seterr(invalid='ignore')
 
 
@@ -433,7 +434,13 @@ class CLUSTER:
 
         :return:
         """
-        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+        # fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+        fig = plt.figure()
+        figsize = (10, 10)
+        ax = [plt.subplot(2, 2, 1),
+              plt.subplot(2, 2, 2),
+              plt.subplot(2, 2, 3),
+              plt.subplot(2, 2, 4, projection=WCS())]
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
         ax = _add_xyz_points(ax, self.members, c='blue', s=5, compute_limits=True)

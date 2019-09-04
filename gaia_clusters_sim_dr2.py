@@ -75,18 +75,18 @@ root_dir = 'GaiaDR2_open_clusters_1907' + root_dir_suffix
 os.system('mkdir ' + root_dir)
 cluster_memb_dir = work_dir + root_dir + '/'
 
-# # read cluster members list produced by our analysis
-# cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
+# read cluster members list produced by our analysis
+cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
 
 # # read cluster members list produced by Janez for stars in GALAH only
 # cluster_members = Table.read(data_dir + 'clusters/members_open_gaia_r2.fits')
 
-# read cluster members list produced by C-G 2018 analysis of OC membership in Gaia DR2
-cluster_members = Table.read(data_dir + 'clusters/Cantat-Gaudin_2018/members.fits')
-# remove trailing whitespaces in original cluster names
-for i_l in range(len(cluster_members)):
-    cluster_members['cluster'][i_l] = str(cluster_members['cluster'][i_l]).lstrip().rstrip()
-cluster_members['d'] = 1e3/cluster_members['parallax']
+# # read cluster members list produced by C-G 2018 analysis of OC membership in Gaia DR2
+# cluster_members = Table.read(data_dir + 'clusters/Cantat-Gaudin_2018/members.fits')
+# # remove trailing whitespaces in original cluster names
+# for i_l in range(len(cluster_members)):
+#     cluster_members['cluster'][i_l] = str(cluster_members['cluster'][i_l]).lstrip().rstrip()
+# cluster_members['d'] = 1e3/cluster_members['parallax']
 
 print 'Reading additional data'
 galah_data = Table.read(data_dir + 'sobject_iraf_53_reduced_20190516.fits')
