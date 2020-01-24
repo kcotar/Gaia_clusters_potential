@@ -15,7 +15,7 @@ if len(argv) > 1:
     # parse input options
     opts, args = getopt(argv[1:], '', ['galah_only=', 'suffix=', 'members='])
     # set parameters, depending on user inputs
-    print opts
+    print(opts)
     for o, a in opts:
         if o == '--galah_only':
             galah_clusters = int(a) > 0
@@ -60,7 +60,7 @@ else:
     if run_membership:
         n_cpu = 4
     else:
-        n_cpu = 20
+        n_cpu = 10
     cluster_dir = '/shared/ebla/cotar/clusters/'
     clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
     # remove trailing whitespaces in original cluster names
@@ -70,7 +70,7 @@ else:
 n_per_cpu = np.ceil(1. * len(selected_clusters) / n_cpu)
 # n_per_cpu=4
 
-print 'Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_cpu)+' per process'
+print('Total number of clusters is '+str(len(selected_clusters))+', '+str(n_per_cpu)+' per process')
 
 # generate strings to be run
 for i_cpu in range(n_cpu):
@@ -79,7 +79,7 @@ for i_cpu in range(n_cpu):
     run_on = selected_clusters[int(n_per_cpu*i_cpu): int(n_per_cpu*(i_cpu+1))]
     if len(run_on) <= 0:
         # skipp this empty selection - may happen when number of object per cpu is small
-        print ' Zero clusters for cpu {:02.0f}'.format(i_cpu+1)
+        print(' Zero clusters for cpu {:02.0f}'.format(i_cpu+1))
         continue
 
     if run_membership:
@@ -88,28 +88,28 @@ for i_cpu in range(n_cpu):
     else:
         run_string = 'python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu + 1) + root_suffix
-    print run_string
+    print(run_string)
 
     txt_file = open(sh_file, 'w')
     txt_file.write('#!/bin/bash \n')
     txt_file.write('#\n')
     # txt_file.write('#SBATCH --partition=rude \n')
     # txt_file.write('#SBATCH --qos=rude \n')
-    txt_file.write('#SBATCH --partition=astro \n')
-    txt_file.write('#SBATCH --qos=astro \n')
+    txt_file.write('#SBATCH --partition=suspend \n')
+    txt_file.write('#SBATCH --qos=suspend \n')
     txt_file.write('#SBATCH --nodes=1 \n')
     if run_membership:
         txt_file.write('#SBATCH --tasks-per-node=4 \n')
     else:
         txt_file.write('#SBATCH --tasks-per-node=2 \n')
     txt_file.write('#SBATCH --mem=15G \n')
-    txt_file.write('#SBATCH --time=10-00:00 \n')
+    txt_file.write('#SBATCH --time=2-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')
-    txt_file.write('#SBATCH --nodelist=astro01 \n')
+    # txt_file.write('#SBATCH --nodelist=astro01 \n')
     txt_file.write('\n')
     txt_file.write('export PYTHONHTTPSVERIFY=0 \n')
-    # txt_file.write('export OMP_NUM_THREADS=1 \n')
+    txt_file.write('export OMP_NUM_THREADS=1 \n')
     txt_file.write('\n')
     txt_file.write(run_string+' \n')
     txt_file.close()

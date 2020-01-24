@@ -1,19 +1,20 @@
-import os, imp
+import os
 import matplotlib
 matplotlib.use('Agg')
-from sklearn.externals import joblib
+from importlib.machinery import SourceFileLoader
+import joblib
 from astropy.table import Table, join
 from isochrones_class import *
 from cluster_class import *
 from cluster_members_class import *
-# from abundances_analysis import *
 from sklearn import mixture
 from gaia_data_queries import *
-imp.load_source('hr_class', '../Binaries_clusters/HR_diagram_class.py')
-from hr_class import *
 from sys import argv
 from getopt import getopt
 from scipy.stats import circmean
+
+SourceFileLoader('hr_class', '../Binaries_clusters/HR_diagram_class.py').load_module()
+from hr_class import *
 
 
 # ------------------------------------------
@@ -38,7 +39,7 @@ if len(argv) > 1:
     # parse input options
     opts, args = getopt(argv[1:], '', ['clusters=', 'suffix=', 'rerun=', 'dir='])
     # set parameters, depending on user inputs
-    print opts
+    print(opts)
     for o, a in opts:
         if o == '--clusters':
             selected_clusters = a.split(',')
@@ -71,26 +72,26 @@ USE_GALPY = True
 data_dir = '/shared/ebla/cotar/'
 work_dir = '/shared/data-camelot/cotar/'
 
-root_dir = 'GaiaDR2_open_clusters_1907' + root_dir_suffix
-os.system('mkdir ' + root_dir)
+root_dir = 'GaiaDR2_open_clusters_2001' + root_dir_suffix
 cluster_memb_dir = work_dir + root_dir + '/'
+os.system('mkdir ' + cluster_memb_dir)
 
-# read cluster members list produced by our analysis
-cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
+# # read cluster members list produced by our analysis
+# cluster_members = Table.read(cluster_memb_dir + 'Cluster_members_analysis_GaiaDR2_combined.fits')
 
 # # read cluster members list produced by Janez for stars in GALAH only
 # cluster_members = Table.read(data_dir + 'clusters/members_open_gaia_r2.fits')
 
-# # read cluster members list produced by C-G 2018 analysis of OC membership in Gaia DR2
-# cluster_members = Table.read(data_dir + 'clusters/Cantat-Gaudin_2018/members.fits')
-# # remove trailing whitespaces in original cluster names
-# for i_l in range(len(cluster_members)):
-#     cluster_members['cluster'][i_l] = str(cluster_members['cluster'][i_l]).lstrip().rstrip()
-# cluster_members['d'] = 1e3/cluster_members['parallax']
+# read cluster members list produced by C-G 2018 analysis of OC membership in Gaia DR2
+cluster_members = Table.read(data_dir + 'clusters/Cantat-Gaudin_2018/members.fits')
+# remove trailing whitespaces in original cluster names
+for i_l in range(len(cluster_members)):
+    cluster_members['cluster'][i_l] = str(cluster_members['cluster'][i_l]).lstrip().rstrip()
+cluster_members['d'] = 1e3/cluster_members['parallax']
 
-print 'Reading additional data'
-galah_data = Table.read(data_dir + 'sobject_iraf_53_reduced_20190516.fits')
-gaia_galah_match = Table.read(data_dir + 'GALAH_iDR3_v1_181221.fits')['sobject_id', 'source_id']
+print('Reading additional data')
+galah_data = Table.read(data_dir + 'sobject_iraf_53_reduced_20190801.fits')
+gaia_galah_match = Table.read(data_dir + 'GALAH_iDR3_main_191213.fits')['sobject_id', 'source_id']
 galah_data = join(galah_data, gaia_galah_match, keys='sobject_id', join_type='left')
 # load isochrones into class
 iso = ISOCHRONES(data_dir + 'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
@@ -111,12 +112,12 @@ if SIMULATE_ORBITS:
 
     # iterate over (pre)selected clusters
     for obs_cluster in selected_clusters:
-        print 'Working on:', obs_cluster
+        print('Working on:', obs_cluster)
 
         out_dir = obs_cluster + out_dir_suffix
 
         idx_cluster_pos = np.where(cluster_members['cluster'] == obs_cluster)[0]
-        print ' Members found in previous step:',  len(idx_cluster_pos)
+        print(' Members found in previous step:',  len(idx_cluster_pos))
         if len(idx_cluster_pos) == 0:
             continue
         clust_data = cluster_members[idx_cluster_pos]
@@ -130,18 +131,18 @@ if SIMULATE_ORBITS:
 
         # check if cluster was already processed
         if os.path.isfile('possible_outside-step1.csv') and not rerun:
-            print 'Cluster already processed'
+            print('Cluster already processed')
             os.chdir('..')
             continue
 
         # increase span with increasing cluster distance
-        d_span = 900. * (1. + clust_data['d'].data[0] / 5e3)  # double span at 5kp
+        d_span = 900. * (1. + clust_data['d'].data[0] / 3e3)  # double span at 53kp
         if QUERY_DATA:
             uotput_file = 'gaia_query_data.csv'
             if os.path.isfile(uotput_file):
                 gaia_data = Table.read(uotput_file)
             else:
-                print ' Sending QUERY to download Gaia data'
+                print(' Sending QUERY to download Gaia data')
                 # limits to retrieve Gaia data
                 gaia_data = get_data_subset(circmean(clust_data['ra'], low=0., high=360.), np.nanmedian(clust_data['dec']),
                                             6.,
@@ -151,17 +152,17 @@ if SIMULATE_ORBITS:
                     continue
                 gaia_data.write(uotput_file)
 
-        print 'Gaia all:', len(gaia_data)
+        print('Gaia all:', len(gaia_data))
         if RV_ZERO:
             gaia_data['rv'] = 0.
             idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
             # rough filtering on pm values
             mean_pmra = np.nanmedian(gaia_data['pmra'])
             mean_pmdec = np.nanmedian(gaia_data['pmdec'])
-            print 'Median PM values', mean_pmra, mean_pmdec
+            print('Median PM values', mean_pmra, mean_pmdec)
             idx_pm_use = np.logical_and(np.abs(gaia_data['pmra'] - mean_pmra) < 3.,
                                         np.abs(gaia_data['pmdec'] - mean_pmdec) < 3.)
-            print ' Will use PM ok objects:', np.sum(idx_pm_use)
+            print(' Will use PM ok objects:', np.sum(idx_pm_use))
             gaia_data = gaia_data[idx_pm_use]
         else:
             if RV_MEAN_CLESTER_MEMB:
@@ -169,13 +170,13 @@ if SIMULATE_ORBITS:
                 idx_members_rv = np.logical_and(np.abs(gaia_data['rv']) > 0., idx_members)
                 rv_med = np.nanmedian(gaia_data['rv'][idx_members_rv])
                 gaia_data['rv'][idx_members] = rv_med
-                print 'Median cluster RV:', rv_med
+                print('Median cluster RV:', rv_med)
 
             # complement Gaia data with GALAH RV measurements
             matched_obj = gaia_data[np.in1d(gaia_data['source_id'], galah_data['source_id'])]['source_id']
-            print 'Galah objects:', len(matched_obj)
+            print('Galah objects:', len(matched_obj))
             if len(matched_obj) > 0:
-                print 'Adding GALAH RV values to Gaia data'
+                print('Adding GALAH RV values to Gaia data')
                 for sor_id in matched_obj:
                     idx_gaia = np.where(gaia_data['source_id'] == sor_id)[0]
                     # get and combine galah rv values
@@ -189,15 +190,15 @@ if SIMULATE_ORBITS:
                                     clust_center, csv_out_cols_init, 'members_init_galah.csv')
 
             gaia_data = gaia_data[np.abs(gaia_data['rv']) > 0.]
-            print 'Gaia with RV:', len(gaia_data)
+            print('Gaia with RV:', len(gaia_data))
 
             idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
-            print 'Gaia in cluster with RV:', np.sum(idx_members)
-            print 'GALAH in cluster with RV:', np.sum(np.in1d(galah_data['source_id'], clust_data['source_id']))
+            print('Gaia in cluster with RV:', np.sum(idx_members))
+            print('GALAH in cluster with RV:', np.sum(np.in1d(galah_data['source_id'], clust_data['source_id'])))
 
             if np.sum(idx_members) < 5:  # at least 3 points are needed for the construction of cluster volume in the xyz coordinate space
-                print 'FINISHED: not enough stars in the cluster to reconstruct its 3D shape and trace orbits.'
-                print ''
+                print('FINISHED: not enough stars in the cluster to reconstruct its 3D shape and trace orbits.')
+                print('')
                 os.chdir('..')
                 continue
 
@@ -208,7 +209,7 @@ if SIMULATE_ORBITS:
         pkl_file_test = 'cluster_simulation_run-step1.pkl'  # TEMP: for faster processing and testing
         if not os.path.isfile(pkl_file_test):
             gaia_data_members = gaia_data[idx_members]
-            print 'RV members cuts'
+            print('RV members cuts')
             rv_clust_med = np.nanmedian(gaia_data_members['rv'])
             rv_clust_std = np.nanstd(gaia_data_members['rv'])
             plt.hist(gaia_data_members['rv'], bins=50, label='')
@@ -225,11 +226,11 @@ if SIMULATE_ORBITS:
             gaia_data_members = gaia_data_members[np.logical_and(gaia_data_members['rv'] >= rv_clust_med - 5.,
                                                                  gaia_data_members['rv'] <= rv_clust_med + 5.)]
             if len(gaia_data_members) < 5:
-                print 'Not enough members after RV cuts'
+                print('Not enough members after RV cuts')
                 os.chdir('..')
                 continue
 
-            print 'Step 1 integration'
+            print('Step 1 integration')
             output_list_objects(gaia_data_members, clust_center, csv_out_cols_init, 'members_init.csv')
             # TODO: age and meh for those clusters
             # TODO: values are not yet used to infer mass and isochrone of the cluster and individual stars
@@ -245,9 +246,9 @@ if SIMULATE_ORBITS:
 
             # have low galactic velocity difference towards median galactic velocity
             vel_clust_gal = np.nanmedian(cluster_class.members['d_x','d_y','d_z'].to_pandas().values, axis=0)
-            print vel_clust_gal
+            print(vel_clust_gal)
             vel_diff_test_gal = np.sqrt(np.sum((cluster_class.members_background['d_x','d_y','d_z'].to_pandas().values - vel_clust_gal)**2, axis=1))
-            print 'median diff', np.mean(vel_diff_test_gal), np.median(vel_diff_test_gal)
+            print('median diff', np.mean(vel_diff_test_gal), np.median(vel_diff_test_gal))
             # plt.hist(vel_diff_test_gal, bins=200)
             # plt.axvline((25. * un.km / un.s).to(un.pc / un.yr).value, color='black')
             # plt.show()
@@ -257,10 +258,10 @@ if SIMULATE_ORBITS:
             idx_test = idx_vel_condition
 
             n_test = np.sum(idx_test)
-            print 'Number of all stars in cluster vicinity:', len(cluster_class.members_background)
-            print 'Number of test stars in cluster vicinity:', n_test
+            print('Number of all stars in cluster vicinity:', len(cluster_class.members_background))
+            print('Number of test stars in cluster vicinity:', n_test)
             if n_test <= 0:
-                print '  WARNING: Not enough test stars in vicinity to perform any orbit integration simulation.'
+                print('  WARNING: Not enough test stars in vicinity to perform any orbit integration simulation.')
                 os.chdir('..')
                 continue
 
@@ -287,8 +288,8 @@ if SIMULATE_ORBITS:
 
         pos_crossing_particles = cluster_class.particle[idx_probable_in]
         pos_outside_particles = cluster_class.particle[~idx_probable_in]
-        print 'Number of possible crossing stars:', len(pos_crossing_particles)
-        print 'Number of possible GALAH crossing stars:', np.sum(np.in1d(pos_crossing_particles['source_id'], clust_data['source_id']))
+        print('Number of possible crossing stars:', len(pos_crossing_particles))
+        print('Number of possible GALAH crossing stars:', np.sum(np.in1d(pos_crossing_particles['source_id'], clust_data['source_id'])))
 
         # HR diagrams and filtering
         # cluster_hr = HR_DIAGRAM(gaia_data[idx_members], khar_clusters_sel, isochrone=iso, photo_system='Gaia')

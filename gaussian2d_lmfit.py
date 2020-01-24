@@ -43,7 +43,7 @@ def fit_multi_gaussian2d(z_vals, x_vals, y_vals, peaks_xy, peaks_val,
                          vary_position=True):
     # input values of image(z_values), x_vals and y_vals
     n_peaks = peaks_xy.shape[0]
-    print '  Performing multi ('+str(n_peaks)+') 2D gaussian fit'
+    print('  Performing multi ('+str(n_peaks)+') 2D gaussian fit')
     fit_param = Parameters()
     fit_param.add('offset', value=0., min=-2., max=2., vary=True)
     xy_vary = 0.2
@@ -61,7 +61,7 @@ def fit_multi_gaussian2d(z_vals, x_vals, y_vals, peaks_xy, peaks_val,
     # perform the actual fit itself
     ts = time()
     fit_res = minimize(eval_gaussian2D, fit_param, args=(x_vals, y_vals, z_vals), method='leastsq')
-    print '   - fit time {:.1f} min'.format((time()-ts)/60.)
+    print('   - fit time {:.1f} min'.format((time()-ts)/60.))
     # fit_res.params.pretty_print()
     # report_fit(fit_res)
     # compute z values using current fitted parameters

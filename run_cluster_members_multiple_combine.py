@@ -12,10 +12,10 @@ data = list([])
 
 for i_dir in range(n_dirs):
     try:
-        # print multi_dir_prefix+'{:02.0f}'.format(i_dir)+'/'+fits_file
+        # print(multi_dir_prefix+'{:02.0f}'.format(i_dir)+'/'+fits_file)
         in_data = Table.read(multi_dir_prefix+'{:02.0f}'.format(i_dir)+'/'+fits_file_in)
         data.append(in_data)
-        print len(in_data)
+        print(len(in_data))
     except:
         pass
 
@@ -31,7 +31,7 @@ for i_dir in range(n_dirs):
     try:
         in_data = Table.read(multi_dir_prefix+'{:02.0f}'.format(i_dir)+'/'+fits_file_in)
         data.append(in_data)
-        print len(in_data)
+        print(len(in_data))
     except:
         pass
 

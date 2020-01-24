@@ -36,14 +36,14 @@ data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_1907_GALAH_CGmebers/'
 
 data_dir = '/shared/ebla/cotar/'
 USE_DR3 = True
-Q_FLAGS = False
+Q_FLAGS = True
 suffix = ''
 
 if len(argv) > 1:
     # parse input options
     opts, args = getopt(argv[1:], '', ['dr3=', 'suffix=', 'flags='])
     # set parameters, depending on user inputs
-    print opts
+    print(opts)
     for o, a in opts:
         if o == '--dr3':
             USE_DR3 = int(a) > 0
@@ -55,7 +55,8 @@ if len(argv) > 1:
 CG_data = Table.read(data_dir+'clusters/Cantat-Gaudin_2018/members.fits')
 
 if USE_DR3:
-    cannon_data = Table.read(data_dir+'GALAH_iDR3_main_alpha_190529.fits')
+    # cannon_data = Table.read(data_dir+'GALAH_iDR3_main_alpha_190529.fits')
+    cannon_data = Table.read(data_dir+'GALAH_iDR3_main_191213.fits')
     fe_col = 'fe_h'
     teff_col = 'teff'
     q_flag = 'flag_sp'
@@ -76,14 +77,14 @@ if Q_FLAGS:
 chdir(data_dir_clusters)
 for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
     chdir(cluster_dir)
-    print 'Working on clusters in ' + cluster_dir
+    print('Working on clusters in ' + cluster_dir)
 
     for sub_dir in glob('*'):
 
         if '.png' in sub_dir or 'individual-abund' in sub_dir:
             continue
 
-        print sub_dir
+        print(sub_dir)
         chdir(sub_dir)
 
         try:
@@ -116,10 +117,10 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
         chdir('..')
 
         if np.sum(idx_init) == 0 or np.sum(idx_in) == 0 or np.sum(idx_out) == 0:
-            print ' Some Galah lists are missing'
+            print(' Some Galah lists are missing')
 
         if USE_DR3:
-            abund_cols = [c for c in cannon_data.colnames if '_fe' in c and 'nr_' not in c and 'e_' not in c and ('I' in c or 'II' in c or 'III' in c)]
+            abund_cols = [c for c in cannon_data.colnames if '_fe' in c and 'nr_' not in c and 'e_' not in c and 'Li' not in c]  # and ('I' in c or 'II' in c or 'III' in c)]
         else:
             abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_')) == 3]
 
@@ -134,7 +135,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
 
         fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
         for i_c, col in enumerate(abund_cols):
-            print col
+            print(col)
             x_p = i_c % x_cols_fig
             y_p = int(1. * i_c / x_cols_fig)
 
@@ -200,7 +201,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
 
         fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
         for i_c, col in enumerate(abund_cols):
-            print col
+            print(col)
             x_p = i_c % x_cols_fig
             y_p = int(1. * i_c / x_cols_fig)
 
@@ -268,7 +269,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
 
         fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
         for i_c, col in enumerate(abund_cols):
-            print col
+            print(col)
             x_p = i_c % x_cols_fig
             y_p = int(1. * i_c / x_cols_fig)
 
@@ -334,38 +335,38 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
         new_sub_cluster_dir = sub_dir + '_individual-abund'
         system('mkdir ' + new_sub_cluster_dir)
         chdir(new_sub_cluster_dir)
-
+        
         for i_star, id_star in enumerate(g_in['source_id']):
-
+        
             rg = (-0.8, 0.8)
             if USE_DR3:
                 rg = (-0.6, 0.6)
-
+        
             x_cols_fig = 7
             y_cols_fig = 5
-
+        
             fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
             for i_c, col in enumerate(abund_cols):
-                print col
+                print(col)
                 x_p = i_c % x_cols_fig
                 y_p = int(1. * i_c / x_cols_fig)
-
+        
                 idx_val = np.isfinite(cannon_data[col])
                 if Q_FLAGS and not USE_DR3:
                     # Elements in DR3 (MgI, SiI, CaI, TiI, TiII ...) are only computed if at least one unflagged line was available
                     idx_val = np.logical_and(idx_val, cannon_data['flag_' + col] == 0)
-
+        
                 idx_u1 = np.logical_and(idx_out, idx_val)
                 idx_u2 = np.logical_and(idx_init, idx_val)
                 idx_u3 = np.logical_and(cannon_data['source_id'] == id_star, idx_val)
                 x_c_field, y_c_field = _prepare_pdf_data(cannon_data[col][idx_u1], cannon_data['e_' + col][idx_u1], rg)
                 x_c_init, y_c_init = _prepare_pdf_data(cannon_data[col][idx_u2], cannon_data['e_' + col][idx_u2], rg)
                 x_c_in, y_c_in = _prepare_pdf_data(cannon_data[col][idx_u3], cannon_data['e_' + col][idx_u3], rg)
-
+        
                 ax[y_p, x_p].plot(x_c_field, y_c_field, lw=1, color='C2', label='Field')
                 ax[y_p, x_p].plot(x_c_init, y_c_init, lw=1, color='C0', label='Initial')
                 ax[y_p, x_p].plot(x_c_in, y_c_in, lw=1, color='C1', label='Ejected')
-
+        
                 label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
                 if USE_DR3:
                     ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
@@ -373,39 +374,39 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
                 else:
                     ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
                                      xticks=[-0.8, -0.4, 0, 0.4, 0.8], xticklabels=['-0.8', '', '0', '', '0.8'])
-
+        
                 ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
                 if i_c == 0:
                     ax[y_p, x_p].legend()
-
+        
             rg = (-1.5, 0.4)
             idx_val = np.isfinite(cannon_data[teff_col])
             if Q_FLAGS:
                 idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
-
+        
             x_p = -1
             y_p = -1
-
+        
             idx_u1 = np.logical_and(idx_out, idx_val)
             idx_u2 = np.logical_and(idx_init, idx_val)
             idx_u3 = np.logical_and(cannon_data['source_id'] == id_star, idx_val)
             x_c_field, y_c_field = _prepare_pdf_data(cannon_data[fe_col][idx_u1], cannon_data['e_' + fe_col][idx_u1], rg)
             x_c_init, y_c_init = _prepare_pdf_data(cannon_data[fe_col][idx_u2], cannon_data['e_' + fe_col][idx_u2], rg)
             x_c_in, y_c_in = _prepare_pdf_data(cannon_data[fe_col][idx_u3], cannon_data['e_' + fe_col][idx_u3], rg)
-
+        
             ax[y_p, x_p].plot(x_c_field, y_c_field, lw=1, color='C2', label='Field')
             ax[y_p, x_p].plot(x_c_init, y_c_init, lw=1, color='C0', label='Initial')
             ax[y_p, x_p].plot(x_c_in, y_c_in, lw=1, color='C1', label='Ejected')
-
+        
             label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
             ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H' + label_add, xlim=rg)
             ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-
+        
             plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98, hspace=0.3, wspace=0.3)
             # plt.show()
             plt.savefig('p_abundances_' + sub_dir + '' + suffix + '_' + str(id_star) + '.png', dpi=250)
             plt.close(fig)
-
+        
         chdir('..')
 
     # go to the directory with all simulations

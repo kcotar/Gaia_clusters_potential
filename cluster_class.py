@@ -77,7 +77,7 @@ def _add_galactic_cartesian_data(input_data, reverse=False, gal_coor=True):
     output_data['z'] = cartesian_coord.z.value
     # get differential (velocities) cartesian values
     cartesian_vel = cartesian_coord.differentials
-    cartesian_vel = cartesian_vel[cartesian_vel.keys()[0]]
+    cartesian_vel = cartesian_vel[list(cartesian_vel.keys())[0]]
     # convert them to pc/yr for easier computation
     if reverse:
         vel_multi = -1.
@@ -261,7 +261,7 @@ def _integrate_pos_vel(pos, vel, g, t, method='newt'):
         # k2 = acceleration(R_init + 0.5 * k1)
         # k3 = acceleration(R_init + 0.5 * k2)
         # k4 = acceleration(R_init + k3)
-        # # print k1, k2, k3, k4
+        # # print(k1, k2, k3, k4)
         # a_star = 1. / 6. * (k1 + 2. * k2 + 2. * k3 + k4)
         # V_new = V_init + a_star * t_step_s
         # R_new = R_init + V_init * t_step_s
@@ -367,13 +367,13 @@ class CLUSTER:
         if 'Mass' not in self.members.colnames:
             self.members['Mass'] = np.nan
         # compute mass for every object in the set
-        print 'Estimating masses of cluster stars'
+        print('Estimating masses of cluster stars')
         # TODO: correction for absolute magnitudes
         for i_obj in range(len(self.members)):
             iso_mass = self.cluster_iso.detemine_stellar_mass(1e3/self.members[i_obj]['parallax'],
                                                               gmag=self.members[i_obj]['phot_g_mean_mag'])
             self.members[i_obj]['Mass'] = iso_mass
-        # print self.members['Mass']
+        # print(self.members['Mass'])
 
     def _potential_at_coordinates(self, loc_vec,
                                   include_background=False, include_galaxy=False, no_interactions=False):
@@ -434,13 +434,13 @@ class CLUSTER:
 
         :return:
         """
-        # fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-        fig = plt.figure()
-        figsize = (10, 10)
-        ax = [plt.subplot(2, 2, 1),
-              plt.subplot(2, 2, 2),
-              plt.subplot(2, 2, 3),
-              plt.subplot(2, 2, 4, projection=WCS())]
+        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+        # fig = plt.figure()
+        # figsize = (10, 10)
+        # ax = [plt.subplot(2, 2, 1),
+        #       plt.subplot(2, 2, 2),
+        #       plt.subplot(2, 2, 3),
+        #       plt.subplot(2, 2, 4, projection=WCS())]
         if self.members_background is not None:
             ax = _add_xyz_points(ax, self.members_background, c='black', s=2)
         ax = _add_xyz_points(ax, self.members, c='blue', s=5, compute_limits=True)
@@ -564,10 +564,10 @@ class CLUSTER:
         if store_hist:
             self.particle_pos = list([])
             self.cluster_memb_pos = list([])
-        print 'Integrating orbit'
+        print('Integrating orbit')
         for i_y in range(len(obs_year)):
             if i_y % 100 == 0:
-                print ' Time step: '+str(i_y+1), 'out of '+str(len(obs_year))
+                print(' Time step: '+str(i_y+1), 'out of '+str(len(obs_year)))
             time_s = time()
             g_clust = self._potential_at_coordinates(pos_init, include_galaxy=include_galaxy_pot, no_interactions=disable_interactions)
             # integrate particle for given time step in years
@@ -580,7 +580,7 @@ class CLUSTER:
                 self._integrate_stars(years=step_years, step_years=step_years, include_galaxy=include_galaxy_pot,
                                       include_background=False, compute_g=integrate_stars_vel, store_hist=store_hist, no_interactions=disable_interactions)
             if self.verbose:
-                print 'Step integ s:', time()-time_s
+                print('Step integ s:', time()-time_s)
 
         if store_hist and integrate_stars_pos:
             # stack computed coordinates along new axis
@@ -597,7 +597,7 @@ class CLUSTER:
         """
         # number of time steps that the simulation was run for
         if verbose:
-            print 'Determining crossing orbits'
+            print('Determining crossing orbits')
         n_steps = self.particle_pos.shape[0]
         n_parti = self.particle_pos.shape[1]
         # analyse every step
@@ -646,7 +646,7 @@ class CLUSTER:
         :param plot_prefix:
         :return:
         """
-        print 'Plotting crossing orbis'
+        print('Plotting crossing orbis')
         if self.final_inside_hull is None:
             # first run the analysis of crossing orbits
             self.determine_orbits_that_cross_cluster()
@@ -670,10 +670,10 @@ class CLUSTER:
         :return:
         """
         if sobject_id is None and source_id is None:
-            print 'Object to animate not defined'
+            print('Object to animate not defined')
             return
 
-        print 'Creating animation'
+        print('Creating animation')
 
         def _update_graph(i_s):
             # TODO: is there any speedup if array subset at time i_s is read only once?
@@ -711,7 +711,7 @@ class CLUSTER:
         if source_id is not None:
             idx_particle = np.where(self.particle['source_id'] == source_id)[0]
             if len(idx_particle) == 0:
-                print ' Skipping animation. Given source_id ('+str(source_id)+') not found between integrated particles'
+                print(' Skipping animation. Given source_id ('+str(source_id)+') not found between integrated particles')
                 return
 
         FFMpegWriter = animation.writers['ffmpeg']
@@ -752,7 +752,7 @@ class CLUSTER:
         ts = np.linspace(0., total_time/1e6, n_ts) * un.Myr
 
         if members:
-            print 'Integrating orbits of cluster members'
+            print('Integrating orbits of cluster members')
             out_data = np.ndarray((n_ts, n_memb, 3), dtype=np.float64)
             for i_memb in range(n_memb):
                 orbit_res_x, orbit_res_y, orbit_res_z = _integrate_orbit(self.members[i_memb], ts)
@@ -762,12 +762,12 @@ class CLUSTER:
             self.cluster_memb_pos = out_data
 
         if particles:
-            print 'Integrating observed interesting stars around cluster'
+            print('Integrating observed interesting stars around cluster')
 
             out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
             for i_part in range(n_part):
                 if i_part % 100 == 0:
-                    print '  ', i_part
+                    print('  ', i_part)
                 # orbit_res = orbits_res_all[i_part]
                 orbit_res = _integrate_orbit(self.particle[i_part], ts)
                 out_data[:, i_part, 0] = orbit_res[0]  # orbit_res.x(ts) * 1e3
@@ -775,7 +775,7 @@ class CLUSTER:
                 out_data[:, i_part, 2] = orbit_res[2]  # orbit_res.z(ts) * 1e3
             self.particle_pos = out_data
 
-        print 'Integration finished'
+        print('Integration finished')
 
     def galpy_mutirun_all(self, members=True, particles=True, total_time=-220e6, step_years=1e4,
                           n_runs=200, perc_in=50., min_in_time=4e6, verbose=True):
@@ -797,7 +797,7 @@ class CLUSTER:
         ts = np.linspace(0., total_time / 1e6, n_ts) * un.Myr
 
         if members:
-            print 'Integrating orbits of cluster members'
+            print('Integrating orbits of cluster members')
             out_data = np.ndarray((n_ts, n_memb, 3), dtype=np.float64)
             for i_memb in range(n_memb):
                 orbit_res_x, orbit_res_y, orbit_res_z = _integrate_orbit(self.members[i_memb], ts)
@@ -807,14 +807,14 @@ class CLUSTER:
             self.cluster_memb_pos = out_data
 
         if particles:
-            print 'Integrating observed interesting stars around cluster, every star is spawned '+str(n_runs)+' times.'
+            print('Integrating observed interesting stars around cluster, every star is spawned '+str(n_runs)+' times.')
 
             out_data = np.ndarray((n_ts, n_part, 3), dtype=np.float64)
             out_prob = []
 
             for i_part in range(n_part):
                 if i_part % 50 == 0 and verbose:
-                    print i_part
+                    print(i_part)
 
                 particle_data = Table(self.particle[i_part])
 
@@ -842,11 +842,11 @@ class CLUSTER:
                 in_clust_prob = 100. * np.sum(particle_instance_in) / n_runs
                 out_prob.append(in_clust_prob)
                 if verbose:
-                    print ' {:5.0f}   {:5.1f}   {:5.1f}   {:5.1f}     {:0.3f}'.format(i_part + 1,
+                    print(' {:5.0f}   {:5.1f}   {:5.1f}   {:5.1f}     {:0.3f}'.format(i_part + 1,
                                                                                       np.nanmax(particle_instance_intime),
                                                                                       np.nanmedian(particle_instance_intime),
                                                                                       in_clust_prob,
-                                                                                      (time() - ts_) / 60.)
+                                                                                      (time() - ts_) / 60.))
 
                 # Select the best run and save it as a final result for this observed star
                 # Select an incarnation that lasts the longest inside the cluster
@@ -859,7 +859,7 @@ class CLUSTER:
             # save all orbits that remain inside the cluster volume for the longest time
             self.particle_pos = out_data
 
-        print 'Integration finished'
+        print('Integration finished')
         if 'out_prob' in locals():
             self.particle['in_cluster_prob'] = np.array(out_prob)
             return np.array(out_prob)
@@ -873,7 +873,7 @@ class CLUSTER:
         mp = MultiPoint(memb_data.tolist())
         p = Point(part_data.tolist())
         h = mp.convex_hull
-        print 'Is inside: ', h.contains(p)
+        print('Is inside: ', h.contains(p))
         # lets see what strange is happening here
         # not even needed any more as the library manual states:
         # A third z coordinate value may be used when constructing instances, but has no effect

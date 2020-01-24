@@ -76,13 +76,13 @@ class CLUSTER_MEMBERS:
         :param n_runs:
         :return:
         """
-        print 'Density analysis of pm space'
+        print('Density analysis of pm space')
         idx_sel = self.data['center_sep'] <= rad
         data_cur = self.data[idx_sel]
 
         n_data_sel = len(data_cur)
         if n_data_sel < 5:
-            print ' Not enough data points in selected radius'
+            print(' Not enough data points in selected radius')
             return
 
         pm_plane_orig = np.vstack((data_cur['pmra'].data, data_cur['pmdec'].data)).T
@@ -94,11 +94,11 @@ class CLUSTER_MEMBERS:
         if (x_range[1]-x_range[0])/d_xy > 1e3 or (y_range[1]-y_range[0])/d_xy > 1e3:
             # to reduce processing time in the case of large x or y axis range
             d_xy = 0.1
-        print '  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy)
+        print('  Ranges:', x_range, y_range, '  (d_pm - {:.2f})'.format(d_xy))
 
         final_list_g2d_params = list([])
         for i_run in np.arange(n_runs)+1:
-            print ' Creating new random pm plane based on observations'
+            print(' Creating new random pm plane based on observations')
             pm_plane = list([])
             for i_pm in range(pm_plane_orig.shape[0]):
                 pm_plane.append([np.random.normal(pm_plane_orig[i_pm, 0], pm_plane_errors[i_pm, 0]),
@@ -109,10 +109,10 @@ class CLUSTER_MEMBERS:
 
             grid_pos_x = np.arange(x_range[0], x_range[1], d_xy)
             grid_pos_y = np.arange(y_range[0], y_range[1], d_xy)
-            # print '  Grid points:', len(grid_pos_x), len(grid_pos_y)
+            # print('  Grid points:', len(grid_pos_x), len(grid_pos_y))
             _x, _y = np.meshgrid(grid_pos_x, grid_pos_y)
 
-            print ' Computing density field'
+            print(' Computing density field')
             # TODO: maybe check wider bandwidths
             stars_density = KernelDensity(bandwidth=0.5, kernel='epanechnikov').fit(pm_plane)
             density_field = stars_density.score_samples(np.vstack((_x.ravel(), _y.ravel())).T)
@@ -162,8 +162,8 @@ class CLUSTER_MEMBERS:
             n_peak_close = len(idx_peak_close)
             idx_peak_closest = np.argmin(final_peaks_pm_dist)
             idx_peak_sort = np.argsort(final_peaks_pm_dist)
-            print '  Number of close peaks detected: ', n_peak_close
-            print final_peaks_pm
+            print('  Number of close peaks detected: ', n_peak_close)
+            print(final_peaks_pm)
 
             # new version when using C-G 2018 reference values
             if n_peak_close > 0:
@@ -179,10 +179,10 @@ class CLUSTER_MEMBERS:
             #     # hard threshold for min_amp if not achieved by the distribution of stars in the image
             #     # determines minimal number of stars inside the kernel
             #     min_amp = max(np.percentile(density_field, 75.), np.max(final_peaks_pm[:, 4])*0.1)
-            #     print 'Min amp:', min_amp
+            #     print('Min amp:', min_amp)
             #     idx_ok = np.logical_and(np.logical_and(final_peaks_pm[:, 2] < max_sigma, final_peaks_pm[:, 3] < max_sigma),
             #                             final_peaks_pm[:, 4] > min_amp)[idx_peak_sort]
-            #     print 'Numb ok:', np.sum(idx_ok), idx_ok
+            #     print('Numb ok:', np.sum(idx_ok), idx_ok)
             #     idx_ok = np.where(idx_ok)[0]
             #     # select first arg that is ok
             #     if len(idx_ok) > 0:
@@ -286,7 +286,7 @@ class CLUSTER_MEMBERS:
 
         n_data_sel = len(data_cur)
         if n_data_sel < 5:
-            print ' Not enough data points in selected radius'
+            print(' Not enough data points in selected radius')
             return
 
         if model_from_selection:
@@ -323,7 +323,7 @@ class CLUSTER_MEMBERS:
                 else:
                     mixtuer_comp_use = np.argmin(bic_res2) + 2
                     covarinace_use = 'full'
-                # print ' Covarinace to use:', covarinace_use
+                # print(' Covarinace to use:', covarinace_use)
             else:
                 for n_c in range(2, max_com):
                     clf = mixture.GaussianMixture(n_components=n_c, covariance_type=covarinace,
@@ -360,7 +360,7 @@ class CLUSTER_MEMBERS:
         else:
             self.selected_final = idx_clust
 
-        print 'plot GM result'
+        print('plot GM result')
         plt.scatter(X_train[:,0], X_train[:,1], c=gm_labels, s=2, lw=0)
         plt.colorbar()
         plt.scatter(self.pm_center[0], self.pm_center[1], c='red', lw=0, s=5)
@@ -368,15 +368,15 @@ class CLUSTER_MEMBERS:
         plt.close()
 
     def determine_cluster_center(self):
-        print ' Proper motion cluster center'
-        print '   old center:', self.pm_center
+        print(' Proper motion cluster center')
+        print('   old center:', self.pm_center)
         new_centers = list([])
         for c_rad in np.linspace(0, np.float64(self.ref['r1']), 8)[1:]:
             c_center = self.perform_selection(c_rad, bayesian_mixture=False, covarinace='diag',
                                                  determine_cluster_center=True, max_com=8)
             new_centers.append(c_center)
         new_center = np.median(np.array(new_centers), axis=0)
-        print '   new center:', new_center
+        print('   new center:', new_center)
         self.pm_center = new_center
 
     def _selected_deriv(self):
@@ -419,7 +419,7 @@ class CLUSTER_MEMBERS:
             if show_final:
                 if self.selected_final is None:
                     # final selection was not yet performed
-                    print 'Running final selection from selected objects'
+                    print('Running final selection from selected objects')
                     self.perform_selection(np.max(self.data['center_sep']), bayesian_mixture=True, max_com=5,
                                            model_from_selection=True)
                 idx_p = self.selected_final
@@ -455,7 +455,7 @@ class CLUSTER_MEMBERS:
         members_par = data_c['parallax'].data
         members_par_e = data_c['parallax_error'].data
         for i_plx in np.arange(n_iter)+1:
-            print ' Creating new incarnation of stellar distances'
+            print(' Creating new incarnation of stellar distances')
             plx_new_list = list([])
             for i_mp in range(len(members_par)):
                 plx_new_list.append(np.random.normal(members_par[i_mp], members_par_e[i_mp]))
@@ -465,8 +465,8 @@ class CLUSTER_MEMBERS:
             dist_std.append(np.nanstd(dist_list))
         cluster_pc_medi = np.nanmedian(dist_med)
         cluster_pc_std = np.nanmedian(dist_std)
-        print 'Medians:', dist_med
-        print 'Stds:   ', dist_std
+        print('Medians:', dist_med)
+        print('Stds:   ', dist_std)
         # save results
         self.cluster_dist_params = [cluster_pc_medi, cluster_pc_std]
         self.dist_probability = (1./(cluster_pc_std*np.sqrt(2.*np.pi))) * np.exp(-0.5*(self.data['parsec']-cluster_pc_medi)**2/cluster_pc_std**2)
@@ -486,7 +486,7 @@ class CLUSTER_MEMBERS:
 
         # TODO: exclude those checks for now
         # if np.abs(self.ref['d'] - cluster_pc_medi) > 150:
-        #     print ' Distance error is too large for this object'
+        #     print(' Distance error is too large for this object')
         #     return False
 
 
@@ -527,7 +527,7 @@ class CLUSTER_MEMBERS:
             plt.close()
 
         if not rv_eval:
-            print ' Not enough RV values in gaia data to evaluate it'
+            print(' Not enough RV values in gaia data to evaluate it')
             return False
 
         # else do the selection based on distance distribution
@@ -540,7 +540,7 @@ class CLUSTER_MEMBERS:
             n_bef = np.sum(self.selected_final)
             self.selected_final[mark_bad] = False
             n_aft = np.sum(self.selected_final)
-            print ' Removed by outlying RV velocity:', n_bef-n_aft
+            print(' Removed by outlying RV velocity:', n_bef-n_aft)
 
         return True
 
@@ -549,7 +549,7 @@ class CLUSTER_MEMBERS:
         data_c = self.data[idx_c]
 
         if len(data_c) < 3:
-            print ' Not enough points to construct a hull'
+            print(' Not enough points to construct a hull')
             return False
 
         min_dist = np.min(data_c['parsec'])
@@ -599,7 +599,7 @@ class CLUSTER_MEMBERS:
         n_bf = len(data_c)
         n_af = np.sum(idx_inside_hull)
         # update results
-        print ' New objects inside hull:', n_af-n_bf
+        print(' New objects inside hull:', n_af-n_bf)
         self.selected_final = deepcopy(idx_inside_hull)
         return True
 
@@ -691,7 +691,7 @@ class CLUSTER_MEMBERS:
             multi_prob = multivariate_normal.pdf(data_vals, mean=dist_mean_vals, cov=cov_matrix)
             # multi_prob = multivariate_normal.cdf(-1.*np.abs(data_vals - dist_mean_vals), mean=None, cov=cov_matrix)
         except:
-            print '   WARNING: Problem determining multi-var normal distribution, no change in cluster members was done.'
+            print('   WARNING: Problem determining multi-var normal distribution, no change in cluster members was done.')
             if prob_thr is None and prob_sigma is None:
                 n_data_vals = len(data_vals)
                 if prob_thr is None and prob_sigma is None:
@@ -708,7 +708,7 @@ class CLUSTER_MEMBERS:
             multi_prob_sigmas = multivariate_normal.pdf(eval_param_values, mean=dist_mean_vals, cov=cov_matrix)
         # eval_param_values = dist_std_vals * np.repeat([np.arange(0, max_sigma + 1, 0.5)], n_params, axis=0).T
         # multi_prob_sigmas = multivariate_normal.cdf(-1.*np.abs(eval_param_values), mean=None, cov=cov_matrix)
-        # print 'Sigma prob', multi_prob_sigmas
+        # print('Sigma prob', multi_prob_sigmas)
 
         if prob_thr is None and prob_sigma is None:
             if return_sigma_vals:
@@ -722,7 +722,7 @@ class CLUSTER_MEMBERS:
                 idx_sel = multi_prob >= prob_thr_sigma
                 self.selected_final = deepcopy(idx_sel)
             except:
-                print '   WARNING: Problem determining prob_thr_sigma, no change in cluster members was done.'
+                print('   WARNING: Problem determining prob_thr_sigma, no change in cluster members was done.')
         else:
             idx_sel = multi_prob >= prob_thr / 100.
             self.selected_final = deepcopy(idx_sel)
@@ -814,7 +814,7 @@ class CLUSTER_MEMBERS:
         idx_parsec = np.logical_and(self.data['parsec'] >= parsec_mean - max_sigma*parsec_std,
                                     self.data['parsec'] <= parsec_mean + max_sigma*parsec_std)
         self.selected_final = np.logical_and(self.selected_final, idx_parsec)
-        print '  Removed by distance:', n_init-np.sum(self.selected_final)
+        print('  Removed by distance:', n_init-np.sum(self.selected_final))
 
         plt.plot(h_x, h_y, c='black')
         # plt.plot(h_x, fit_init, 'b--')
