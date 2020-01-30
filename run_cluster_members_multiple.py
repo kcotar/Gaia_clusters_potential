@@ -1,5 +1,5 @@
 import subprocess
-import os
+import time
 import numpy as np
 from astropy.table import Table
 
@@ -54,3 +54,4 @@ for i_cpu in range(n_cpu):
     print run_string
     pid = subprocess.Popen(run_string, shell=True)
     print 'PID run:', pid
+    time.sleep(25)

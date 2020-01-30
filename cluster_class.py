@@ -813,13 +813,13 @@ class CLUSTER:
             out_prob = []
 
             for i_part in range(n_part):
+                ts_ = time()
                 if i_part % 50 == 0 and verbose:
                     print(i_part)
 
                 particle_data = Table(self.particle[i_part])
 
                 out_data_temp = np.ndarray((n_ts, n_runs, 3), dtype=np.float64)
-                ts_ = time()
                 for i_r in range(n_runs):
                     # generate random particle from the observed data
                     particle_data_temp = Table(particle_data)
@@ -842,7 +842,7 @@ class CLUSTER:
                 in_clust_prob = 100. * np.sum(particle_instance_in) / n_runs
                 out_prob.append(in_clust_prob)
                 if verbose:
-                    print(' {:5.0f}   {:5.1f}   {:5.1f}   {:5.1f}     {:0.3f}'.format(i_part + 1,
+                    print(' {:5.0f}   {:5.1f}   {:5.1f}   {:5.1f}     {:0.3f}min'.format(i_part + 1,
                                                                                       np.nanmax(particle_instance_intime),
                                                                                       np.nanmedian(particle_instance_intime),
                                                                                       in_clust_prob,

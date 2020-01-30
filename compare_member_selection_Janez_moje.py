@@ -1,10 +1,13 @@
 import numpy as np
 from astropy.table import Table, join
 
-data_dir = '/shared/ebla/cotar/clusters/'
+root_dir = '/shared/ebla/cotar/'
+data_dir = root_dir + 'clusters/'
 # data_dir_clusters = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/'
 #
-# galah_gaia = Table.read(data_dir + 'sobject_iraf_53_gaia.fits')
+galah_gaia = Table.read(root_dir + 'GALAH_iDR3_main_191213.fits')
+galah_gaia['d'] = 1e3 / galah_gaia['parallax']
+# galah_gaia = Table.read(root_dir + 'sobject_iraf_53_reduced_20190801.fits')
 # cluster_sel = Table.read(data_dir_clusters + 'Cluster_members_Gaia_DR2_Kharchenko_2013_init.fits')
 #
 # cluster_sel = join(cluster_sel, galah_gaia['source_id', 'sobject_id'], keys=['source_id'], join_type='left')
@@ -29,4 +32,5 @@ for txt_line in txt_lines_all:
     #
     # print '{:3.0f}  {:3.0f}  - '.format(in_sel, len(cluster_sobjectid)), cluster_name
 
+out_table = join(out_table, galah_gaia['source_id', 'sobject_id', 'ra', 'dec', 'd'], keys='sobject_id', join_type='left')
 out_table.write(data_dir + 'members_open_gaia_r2.fits', overwrite=True)

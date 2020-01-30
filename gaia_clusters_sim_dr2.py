@@ -12,6 +12,10 @@ from gaia_data_queries import *
 from sys import argv
 from getopt import getopt
 from scipy.stats import circmean
+import warnings
+warnings.filterwarnings('ignore')
+with warnings.catch_warnings():
+    warnings.filterwarnings('ignore', r"'partition' will ignore the 'mask' of the MaskedColumn")
 
 SourceFileLoader('hr_class', '../Binaries_clusters/HR_diagram_class.py').load_module()
 from hr_class import *
@@ -31,7 +35,8 @@ def fill_table(in_data, cluster, cols, cols_data):
 # ------------------------------------------
 # ----------------  INPUTS  ----------------
 # ------------------------------------------
-selected_clusters = ['Blanco_1', 'NGC_188', 'NGC_1817']
+selected_clusters = ['Ruprecht_147', 'NGC_2632', 'Blanco_1', 'NGC_2682', 'NGC_1817', 'Collinder_261',
+                     'NGC_6253', 'Melotte_22', 'NGC_2112', 'NGC_2516']
 root_dir_suffix = ''
 out_dir_suffix = ''
 rerun = False
@@ -96,7 +101,7 @@ galah_data = join(galah_data, gaia_galah_match, keys='sobject_id', join_type='le
 # load isochrones into class
 iso = ISOCHRONES(data_dir + 'isochrones/padova_Gaia/isochrones_all.fits', photo_system='Gaia')
 
-output_dir = cluster_memb_dir + 'Cluster_orbits_Gaia_DR2_' + out_dir_suffix
+output_dir = cluster_memb_dir + 'Cluster_orbits_GaiaDR2_CGmembers_' + out_dir_suffix
 os.system('mkdir ' + output_dir)
 os.chdir(output_dir)
 
@@ -138,7 +143,7 @@ if SIMULATE_ORBITS:
         # increase span with increasing cluster distance
         d_span = 900. * (1. + clust_data['d'].data[0] / 3e3)  # double span at 53kp
         if QUERY_DATA:
-            uotput_file = 'gaia_query_data.csv'
+            uotput_file = 'gaia_query_data.fits'
             if os.path.isfile(uotput_file):
                 gaia_data = Table.read(uotput_file)
             else:

@@ -60,7 +60,7 @@ else:
     if run_membership:
         n_cpu = 4
     else:
-        n_cpu = 10
+        n_cpu = 12
     cluster_dir = '/shared/ebla/cotar/clusters/'
     clusters = Table.read(cluster_dir + 'members_open_gaia_r2.fits')
     # remove trailing whitespaces in original cluster names
@@ -83,27 +83,27 @@ for i_cpu in range(n_cpu):
         continue
 
     if run_membership:
-        run_string = 'python tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
+        run_string = 'python -u tgas_clusters.py --r=0 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1) + root_suffix
     else:
-        run_string = 'python gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
+        run_string = 'python -u gaia_clusters_sim_dr2.py --r=0 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu + 1) + root_suffix
     print(run_string)
 
     txt_file = open(sh_file, 'w')
     txt_file.write('#!/bin/bash \n')
     txt_file.write('#\n')
-    # txt_file.write('#SBATCH --partition=rude \n')
-    # txt_file.write('#SBATCH --qos=rude \n')
-    txt_file.write('#SBATCH --partition=suspend \n')
-    txt_file.write('#SBATCH --qos=suspend \n')
+    txt_file.write('#SBATCH --partition=astro \n')
+    txt_file.write('#SBATCH --qos=astro \n')
+    # txt_file.write('#SBATCH --partition=suspend \n')
+    # txt_file.write('#SBATCH --qos=suspend \n')
     txt_file.write('#SBATCH --nodes=1 \n')
     if run_membership:
         txt_file.write('#SBATCH --tasks-per-node=4 \n')
     else:
-        txt_file.write('#SBATCH --tasks-per-node=2 \n')
+        txt_file.write('#SBATCH --tasks-per-node=1 \n')
     txt_file.write('#SBATCH --mem=15G \n')
-    txt_file.write('#SBATCH --time=2-00:00 \n')
+    txt_file.write('#SBATCH --time=20-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')
     # txt_file.write('#SBATCH --nodelist=astro01 \n')

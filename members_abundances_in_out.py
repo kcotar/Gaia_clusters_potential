@@ -9,6 +9,10 @@ from scipy.stats import norm as gauss_norm
 from sys import argv
 from getopt import getopt
 
+# turn off polyfit ranking warnings
+import warnings
+warnings.filterwarnings('ignore')
+
 
 def _prepare_pdf_data(means, stds, range, norm=True):
     x_vals = np.linspace(range[0], range[1], 250)
@@ -31,17 +35,82 @@ def _prepare_hist_data(d, bins, range, norm=True):
     return edges[:-1], heights, width
 
 
+def _evaluate_abund_trend_fit(orig, fit, idx, sigma_low, sigma_high):
+    # diffence to the original data
+    diff = orig - fit
+    std_diff = np.nanstd(diff[idx])
+    # select data that will be fitted
+    idx_outlier = np.logical_or(diff < (-1. * std_diff * sigma_low),
+                                diff > (std_diff * sigma_high))
+    return np.logical_and(idx, ~idx_outlier)
+
+
+def fit_abund_trend(p_data, a_data, 
+                    steps=3, sigma_low=2.5, sigma_high=2.5, 
+                    order=5, window=10, n_min_perc=10.,func='poly'):
+
+    idx_fit = np.logical_and(np.isfinite(p_data), np.isfinite(a_data))
+    data_len = np.sum(idx_fit)
+
+    n_fit_points_prev = np.sum(idx_fit)
+    if data_len <= order + 1:
+        return None, None
+    p_offset = np.nanmedian(p_data)
+
+    for i_f in range(steps):  # number of sigma clipping steps
+        if func == 'cheb':
+            coef = np.polynomial.chebyshev.chebfit(p_data[idx_fit] - p_offset, a_data[idx_fit], order)
+            f_data = np.polynomial.chebyshev.chebval(p_data - p_offset, coef)
+        if func == 'legen':
+            coef = np.polynomial.legendre.legfit(p_data[idx_fit] - p_offset, a_data[idx_fit], order)
+            f_data = np.polynomial.legendre.legval(p_data - p_offset, coef)
+        if func == 'poly':
+            coef = np.polyfit(p_data[idx_fit] - p_offset, a_data[idx_fit], order)
+            f_data = np.poly1d(coef)(p_data - p_offset)
+        if func == 'spline':
+            coef = splrep(p_data[idx_fit] - p_offset, a_data[idx_fit], k=order, s=window)
+            f_data = splev(p_data - p_offset, coef)
+
+        idx_fit = _evaluate_abund_trend_fit(a_data, f_data, idx_fit, sigma_low, sigma_high)
+        n_fit_points = np.sum(idx_fit)
+        if 100.*n_fit_points/data_len < n_min_perc:
+            break
+        if n_fit_points == n_fit_points_prev:
+            break
+        else:
+            n_fit_points_prev = n_fit_points
+
+    a_std = np.nanstd(a_data - f_data)
+    return [coef, p_offset], a_std
+
+
+def eval_abund_trend(p_data, m_data, func='poly'):
+    coef, p_offset = m_data
+
+    if func == 'cheb':
+        f_data = np.polynomial.chebyshev.chebval(p_data - p_offset, coef)
+    if func == 'legen':
+        f_data = np.polynomial.legendre.legval(p_data - p_offset, coef)
+    if func == 'poly':
+        f_data = np.poly1d(coef)(p_data - p_offset)
+    if func == 'spline':
+        f_data = splev(p_data - p_offset, coef)
+
+    return f_data
+
+
 simulation_dir = '/shared/data-camelot/cotar/'
-data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_1907_GALAH_CGmebers/'
+data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_2001/'
 
 data_dir = '/shared/ebla/cotar/'
 USE_DR3 = True
 Q_FLAGS = True
+P_INDIVIDUAL = False
 suffix = ''
 
 if len(argv) > 1:
     # parse input options
-    opts, args = getopt(argv[1:], '', ['dr3=', 'suffix=', 'flags='])
+    opts, args = getopt(argv[1:], '', ['dr3=', 'suffix=', 'flags=', 'individual='])
     # set parameters, depending on user inputs
     print(opts)
     for o, a in opts:
@@ -51,6 +120,8 @@ if len(argv) > 1:
             suffix += str(a)
         if o == '--flags':
             Q_FLAGS = int(a) > 0
+        if o == '--individual':
+            P_INDIVIDUAL = int(a) > 0
 
 CG_data = Table.read(data_dir+'clusters/Cantat-Gaudin_2018/members.fits')
 
@@ -75,7 +146,7 @@ if Q_FLAGS:
 
 # detemine all posible simulation subdirs
 chdir(data_dir_clusters)
-for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
+for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
     chdir(cluster_dir)
     print('Working on clusters in ' + cluster_dir)
 
@@ -84,6 +155,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
         if '.png' in sub_dir or 'individual-abund' in sub_dir:
             continue
 
+        print(' ')
         print(sub_dir)
         chdir(sub_dir)
 
@@ -96,7 +168,7 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
         try:
             g_in = Table.read('possible_ejected-step1_galah.csv', format='ascii', delimiter='\t')
             # further refinement of results to be plotted here
-            g_in = g_in[np.logical_and(g_in['time_in_cluster'] >= 1.5,  # [Myr] longest time (of all incarnations) inside cluster
+            g_in = g_in[np.logical_and(g_in['time_in_cluster'] >= 1.,  # [Myr] longest time (of all incarnations) inside cluster
                                        g_in['in_cluster_prob'] >= 68.)]  # percentage of reincarnations inside cluster
             idx_in = np.in1d(cannon_data['source_id'], g_in['source_id'])
             idx_in_no_CG = np.logical_and(idx_in,
@@ -120,9 +192,109 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
             print(' Some Galah lists are missing')
 
         if USE_DR3:
-            abund_cols = [c for c in cannon_data.colnames if '_fe' in c and 'nr_' not in c and 'e_' not in c and 'Li' not in c]  # and ('I' in c or 'II' in c or 'III' in c)]
+            abund_cols = [c for c in cannon_data.colnames if '_fe' in c and 'nr_' not in c and 'e_' not in c and 'Li' not in c and 'alpha' not in c]  # and ('I' in c or 'II' in c or 'III' in c)]
         else:
             abund_cols = [c for c in cannon_data.colnames if '_abund' in c and len(c.split('_')) == 3]
+
+        # ------------------------------------------------------------------------------
+        # NEW: plot with parameter dependency trends
+        # ------------------------------------------------------------------------------
+        rg = (-1.0, 1.0)
+        bs = 40
+
+        x_cols_fig = 7
+        y_cols_fig = 5
+
+        param_lims = {'teff': [3000, 7000]}  # , 'logg': [0.0, 5.5], 'fe_h': [-1.2, 0.5]}
+        for param in list(param_lims.keys()):
+            cannon_data['abund_det'] = 0
+            print('Estimating membership using parameter', param)
+            fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
+            for i_c, col in enumerate(abund_cols):
+                print(col)
+                x_p = i_c % x_cols_fig
+                y_p = int(1. * i_c / x_cols_fig)
+
+                idx_val = np.isfinite(cannon_data[col])
+                if Q_FLAGS:
+                    idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
+
+                idx_u1 = np.logical_and(idx_out, idx_val)
+                idx_u2 = np.logical_and(idx_init, idx_val)
+                idx_u3 = np.logical_and(idx_in, idx_val)
+
+                ax[y_p, x_p].scatter(cannon_data[param][idx_u1], cannon_data[col][idx_u1],
+                                     lw=0, s=3, color='C2', label='Field')
+                ax[y_p, x_p].scatter(cannon_data[param][idx_u2], cannon_data[col][idx_u2],
+                                     lw=0, s=3, color='C0', label='Initial')
+                ax[y_p, x_p].scatter(cannon_data[param][idx_u3], cannon_data[col][idx_u3],
+                                     lw=0, s=3, color='C1', label='Ejected')
+
+                fit_model, col_std = fit_abund_trend(cannon_data[param][idx_u2], cannon_data[col][idx_u2], 
+                                                     order=3, steps=2, sigma_low=2.5, sigma_high=2.5, n_min_perc=10.,func='poly')
+                if fit_model is not None:
+                    x_fit = np.linspace(param_lims[param][0], param_lims[param][1], 250)
+                    y_fit = eval_abund_trend(x_fit, fit_model, func='poly')
+
+                    ax[y_p, x_p].plot(x_fit, y_fit, lw=0.5, color='C0', label='', alpha=0.8)
+                    ax[y_p, x_p].plot(x_fit, y_fit + 1. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.75)
+                    ax[y_p, x_p].plot(x_fit, y_fit - 1. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.75)
+                    ax[y_p, x_p].plot(x_fit, y_fit + 2. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.5)
+                    ax[y_p, x_p].plot(x_fit, y_fit - 2. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.5)
+
+                    # count abundance detections for possible ejected members
+                    a_eject_fit = eval_abund_trend(cannon_data[param], fit_model, func='poly')
+                    idx_is_ejected = np.logical_and(idx_u3,
+                                                    np.abs(cannon_data[col] - a_eject_fit) <= col_std)
+                    # print(np.sum(idx_u3),np.sum(idx_is_ejected))
+                    # add detection flags
+                    cannon_data['abund_det'][idx_is_ejected] += 1
+
+                label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
+                ax[y_p, x_p].set(xlim=param_lims[param], title=col.split('_')[0] + label_add,
+                                 ylim=rg, yticks=[-1., -0.5, 0, 0.5, 1.], yticklabels=['-1.', '', '0', '', '1.'])
+                ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
+                if i_c == 0:
+                    ax[y_p, x_p].legend()
+
+            # print(cannon_data['abund_det'][idx_in])
+            # show abund_det stats
+            u_det, n_det = np.unique(np.array(cannon_data['abund_det'][idx_in]), return_counts=True)
+            for ud, nd in zip(u_det, n_det):
+            	print('   {:3d} stars detected {:2d} times'.format(nd, ud))
+            print('')
+
+            rg = (-1.7, 0.5)
+            idx_val = np.isfinite(cannon_data[teff_col])
+            if Q_FLAGS:
+                idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
+
+            x_p = -1
+            y_p = -1
+
+            idx_u1 = np.logical_and(idx_out, idx_val)
+            idx_u2 = np.logical_and(idx_init, idx_val)
+            idx_u3 = np.logical_and(idx_in, idx_val)
+            idx_u3_conf = np.logical_and(idx_u3, cannon_data['abund_det'] >= 10)
+
+            ax[y_p, x_p].scatter(cannon_data[param][idx_u1], cannon_data[fe_col][idx_u1],
+                                 lw=0, s=4, color='C2', label='Field')
+            ax[y_p, x_p].scatter(cannon_data[param][idx_u2], cannon_data[fe_col][idx_u2],
+                                 lw=0, s=4, color='C0', label='Initial')
+            ax[y_p, x_p].scatter(cannon_data[param][idx_u3], cannon_data[fe_col][idx_u3],
+                                 lw=0, s=4, color='C1', label='Ejected')
+            ax[y_p, x_p].scatter(cannon_data[param][idx_u3_conf], cannon_data[fe_col][idx_u3_conf],
+                                 lw=0, s=1, color='black', label='Confirmed')
+
+            label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
+            ax[y_p, x_p].set(ylim=rg, title='Fe/H' + label_add, xlim=param_lims[param])
+            ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
+
+            plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98, hspace=0.3, wspace=0.3)
+            # plt.show()
+            plt.savefig('p_' + param + '_abundances_' + sub_dir + '' + suffix + '.png', dpi=250)
+            plt.close(fig)
+
 
         # ------------------------------------------------------------------------------
         # NEW: plot with PDF
@@ -256,158 +428,84 @@ for cluster_dir in glob('Cluster_orbits_Gaia_DR2_*'):
             plt.savefig('p_abundances_' + sub_dir + '' + suffix + '_noCGmemb.png', dpi=250)
         plt.close(fig)
 
+        if P_INDIVIDUAL:
+            # create new subdirectory with individual star plots
+            new_sub_cluster_dir = sub_dir + '_individual-abund'
+            system('mkdir ' + new_sub_cluster_dir)
+            chdir(new_sub_cluster_dir)
 
+            for i_star, id_star in enumerate(g_in['source_id']):
 
-        # ------------------------------------------------------------------------------
-        # OLD: plot with histogram bins
-        # ------------------------------------------------------------------------------
-        rg = (-1.0, 1.0)
-        bs = 40
+                rg = (-0.8, 0.8)
+                if USE_DR3:
+                    rg = (-0.6, 0.6)
 
-        x_cols_fig = 7
-        y_cols_fig = 5
+                x_cols_fig = 7
+                y_cols_fig = 5
 
-        fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
-        for i_c, col in enumerate(abund_cols):
-            print(col)
-            x_p = i_c % x_cols_fig
-            y_p = int(1. * i_c / x_cols_fig)
+                fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
+                for i_c, col in enumerate(abund_cols):
+                    print(col)
+                    x_p = i_c % x_cols_fig
+                    y_p = int(1. * i_c / x_cols_fig)
 
-            idx_val = np.isfinite(cannon_data[col])
-            if Q_FLAGS and not USE_DR3:
-                # Elements in DR3 (MgI, SiI, CaI, TiI, TiII ...) are only computed if at least one unflagged line was available
-                idx_val = np.logical_and(idx_val, cannon_data['flag_'+col] == 0)
+                    idx_val = np.isfinite(cannon_data[col])
+                    if Q_FLAGS and not USE_DR3:
+                        # Elements in DR3 (MgI, SiI, CaI, TiI, TiII ...) are only computed if at least one unflagged line was available
+                        idx_val = np.logical_and(idx_val, cannon_data['flag_' + col] == 0)
 
-            # plots
-            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_out, idx_val)], bs, rg)
-            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.2, facecolor='C2', edgecolor=None, label='Field')
-            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C2', label='')
+                    idx_u1 = np.logical_and(idx_out, idx_val)
+                    idx_u2 = np.logical_and(idx_init, idx_val)
+                    idx_u3 = np.logical_and(cannon_data['source_id'] == id_star, idx_val)
+                    x_c_field, y_c_field = _prepare_pdf_data(cannon_data[col][idx_u1], cannon_data['e_' + col][idx_u1], rg)
+                    x_c_init, y_c_init = _prepare_pdf_data(cannon_data[col][idx_u2], cannon_data['e_' + col][idx_u2], rg)
+                    x_c_in, y_c_in = _prepare_pdf_data(cannon_data[col][idx_u3], cannon_data['e_' + col][idx_u3], rg)
 
-            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_init, idx_val)], bs, rg)
-            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C0', edgecolor=None, label='Initial')
-            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C0', label='')
+                    ax[y_p, x_p].plot(x_c_field, y_c_field, lw=1, color='C2', label='Field')
+                    ax[y_p, x_p].plot(x_c_init, y_c_init, lw=1, color='C0', label='Initial')
+                    ax[y_p, x_p].plot(x_c_in, y_c_in, lw=1, color='C1', label='Ejected')
 
-            h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[col][np.logical_and(idx_in, idx_val)], bs, rg)
-            ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C1', edgecolor=None, label='Ejected')
-            ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C1', label='')
+                    label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
+                    if USE_DR3:
+                        ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
+                                         xticks=[-0.6, -0.3, 0, 0.3, 0.6], xticklabels=['-0.6', '', '0', '', '0.6'])
+                    else:
+                        ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
+                                         xticks=[-0.8, -0.4, 0, 0.4, 0.8], xticklabels=['-0.8', '', '0', '', '0.8'])
 
-            label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(np.logical_and(idx_out, idx_val)),
-                                                           np.sum(np.logical_and(idx_init, idx_val)),
-                                                           np.sum(np.logical_and(idx_in, idx_val)))
-            ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg, xticks=[-1., -0.5, 0, 0.5, 1.], xticklabels=['-1.', '', '0', '', '1.'])
-            ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-            if i_c == 0:
-                ax[y_p, x_p].legend()
+                    ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
+                    if i_c == 0:
+                        ax[y_p, x_p].legend()
 
-        rg = (-1.7, 0.5)
-        idx_val = np.isfinite(cannon_data[teff_col])
-        if Q_FLAGS:
-            idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
+                rg = (-1.5, 0.4)
+                idx_val = np.isfinite(cannon_data[teff_col])
+                if Q_FLAGS:
+                    idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
 
-        x_p = -1
-        y_p = -1
-        h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[fe_col][np.logical_and(idx_out, idx_val)], bs, rg)
-        ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.2, facecolor='C2', edgecolor=None, label='Field ({:.0f})'.format(np.sum(np.logical_and(idx_out, idx_val))))
-        ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C2', label='')
+                x_p = -1
+                y_p = -1
 
-        h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[fe_col][np.logical_and(idx_init, idx_val)], bs, rg)
-        ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C0', edgecolor=None, label='Initial ({:.0f})'.format(np.sum(np.logical_and(idx_init, idx_val))))
-        ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C0', label='')
-
-        h_edg, h_hei, h_wid = _prepare_hist_data(cannon_data[fe_col][np.logical_and(idx_in, idx_val)], bs, rg)
-        ax[y_p, x_p].bar(h_edg, h_hei, width=h_wid, alpha=0.3, facecolor='C1', edgecolor=None, label='Ejected ({:.0f})'.format(np.sum(np.logical_and(idx_in, idx_val))))
-        ax[y_p, x_p].step(h_edg, h_hei, where='mid', lw=0.6, alpha=1., color='C1', label='')
-
-        label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(np.logical_and(idx_out, idx_val)),
-                                                       np.sum(np.logical_and(idx_init, idx_val)),
-                                                       np.sum(np.logical_and(idx_in, idx_val)))
-        ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H' + label_add, xlim=rg)
-        ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-
-        plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98,
-                            hspace=0.3, wspace=0.3)
-
-        # plt.show()
-        plt.savefig('h_abundances_' + sub_dir + '' + suffix + '.png', dpi=250)
-        plt.close(fig)
-
-        # create new subdirectory with individual star plots
-        new_sub_cluster_dir = sub_dir + '_individual-abund'
-        system('mkdir ' + new_sub_cluster_dir)
-        chdir(new_sub_cluster_dir)
-        
-        for i_star, id_star in enumerate(g_in['source_id']):
-        
-            rg = (-0.8, 0.8)
-            if USE_DR3:
-                rg = (-0.6, 0.6)
-        
-            x_cols_fig = 7
-            y_cols_fig = 5
-        
-            fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
-            for i_c, col in enumerate(abund_cols):
-                print(col)
-                x_p = i_c % x_cols_fig
-                y_p = int(1. * i_c / x_cols_fig)
-        
-                idx_val = np.isfinite(cannon_data[col])
-                if Q_FLAGS and not USE_DR3:
-                    # Elements in DR3 (MgI, SiI, CaI, TiI, TiII ...) are only computed if at least one unflagged line was available
-                    idx_val = np.logical_and(idx_val, cannon_data['flag_' + col] == 0)
-        
                 idx_u1 = np.logical_and(idx_out, idx_val)
                 idx_u2 = np.logical_and(idx_init, idx_val)
                 idx_u3 = np.logical_and(cannon_data['source_id'] == id_star, idx_val)
-                x_c_field, y_c_field = _prepare_pdf_data(cannon_data[col][idx_u1], cannon_data['e_' + col][idx_u1], rg)
-                x_c_init, y_c_init = _prepare_pdf_data(cannon_data[col][idx_u2], cannon_data['e_' + col][idx_u2], rg)
-                x_c_in, y_c_in = _prepare_pdf_data(cannon_data[col][idx_u3], cannon_data['e_' + col][idx_u3], rg)
-        
+                x_c_field, y_c_field = _prepare_pdf_data(cannon_data[fe_col][idx_u1], cannon_data['e_' + fe_col][idx_u1], rg)
+                x_c_init, y_c_init = _prepare_pdf_data(cannon_data[fe_col][idx_u2], cannon_data['e_' + fe_col][idx_u2], rg)
+                x_c_in, y_c_in = _prepare_pdf_data(cannon_data[fe_col][idx_u3], cannon_data['e_' + fe_col][idx_u3], rg)
+
                 ax[y_p, x_p].plot(x_c_field, y_c_field, lw=1, color='C2', label='Field')
                 ax[y_p, x_p].plot(x_c_init, y_c_init, lw=1, color='C0', label='Initial')
                 ax[y_p, x_p].plot(x_c_in, y_c_in, lw=1, color='C1', label='Ejected')
-        
+
                 label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
-                if USE_DR3:
-                    ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
-                                     xticks=[-0.6, -0.3, 0, 0.3, 0.6], xticklabels=['-0.6', '', '0', '', '0.6'])
-                else:
-                    ax[y_p, x_p].set(ylim=(0, 1.02), title=col.split('_')[0] + label_add, xlim=rg,
-                                     xticks=[-0.8, -0.4, 0, 0.4, 0.8], xticklabels=['-0.8', '', '0', '', '0.8'])
-        
+                ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H' + label_add, xlim=rg)
                 ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-                if i_c == 0:
-                    ax[y_p, x_p].legend()
-        
-            rg = (-1.5, 0.4)
-            idx_val = np.isfinite(cannon_data[teff_col])
-            if Q_FLAGS:
-                idx_val = np.logical_and(idx_val, cannon_data[q_flag] == 0)
-        
-            x_p = -1
-            y_p = -1
-        
-            idx_u1 = np.logical_and(idx_out, idx_val)
-            idx_u2 = np.logical_and(idx_init, idx_val)
-            idx_u3 = np.logical_and(cannon_data['source_id'] == id_star, idx_val)
-            x_c_field, y_c_field = _prepare_pdf_data(cannon_data[fe_col][idx_u1], cannon_data['e_' + fe_col][idx_u1], rg)
-            x_c_init, y_c_init = _prepare_pdf_data(cannon_data[fe_col][idx_u2], cannon_data['e_' + fe_col][idx_u2], rg)
-            x_c_in, y_c_in = _prepare_pdf_data(cannon_data[fe_col][idx_u3], cannon_data['e_' + fe_col][idx_u3], rg)
-        
-            ax[y_p, x_p].plot(x_c_field, y_c_field, lw=1, color='C2', label='Field')
-            ax[y_p, x_p].plot(x_c_init, y_c_init, lw=1, color='C0', label='Initial')
-            ax[y_p, x_p].plot(x_c_in, y_c_in, lw=1, color='C1', label='Ejected')
-        
-            label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
-            ax[y_p, x_p].set(ylim=(0, 1.02), title='Fe/H' + label_add, xlim=rg)
-            ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-        
-            plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98, hspace=0.3, wspace=0.3)
-            # plt.show()
-            plt.savefig('p_abundances_' + sub_dir + '' + suffix + '_' + str(id_star) + '.png', dpi=250)
-            plt.close(fig)
-        
-        chdir('..')
+
+                plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98, hspace=0.3, wspace=0.3)
+                # plt.show()
+                plt.savefig('p_abundances_' + sub_dir + '' + suffix + '_' + str(id_star) + '.png', dpi=250)
+                plt.close(fig)
+
+            chdir('..')
 
     # go to the directory with all simulations
     chdir('..')

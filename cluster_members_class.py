@@ -15,6 +15,7 @@ from skimage.feature import peak_local_max
 from gaussian2d_lmfit import *
 from scipy.stats import norm
 from scipy.stats import multivariate_normal
+np.seterr(invalid='ignore')
 
 
 # -------------------------------
