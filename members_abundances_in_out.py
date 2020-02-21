@@ -124,6 +124,13 @@ if len(argv) > 1:
             P_INDIVIDUAL = int(a) > 0
 
 CG_data = Table.read(data_dir+'clusters/Cantat-Gaudin_2018/members.fits')
+tails_data = Table.read(data_dir+'clusters/cluster_tails/members_open_gaia_tails.fits')
+
+# remove cluster members from tails data
+print('Cluster members all:', len(CG_data), len(tails_data))
+idx_not_in_cluster = np.in1d(tails_data['source_id'], CG_data['source_id'], invert=True)
+tails_data = tails_data[idx_not_in_cluster]
+print('Cluster members all:', len(CG_data), len(tails_data))
 
 if USE_DR3:
     # cannon_data = Table.read(data_dir+'GALAH_iDR3_main_alpha_190529.fits')
@@ -144,13 +151,19 @@ else:
 if Q_FLAGS:
     suffix += '_flag0'
 
-# detemine all posible simulation subdirs
+# determine all possible simulation subdirs
 chdir(data_dir_clusters)
 for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
     chdir(cluster_dir)
     print('Working on clusters in ' + cluster_dir)
 
     for sub_dir in glob('*'):
+
+        current_cluster = '_'.join(sub_dir.split('_')[0:2])
+        source_id_cg = CG_data[CG_data['cluster'] == current_cluster]['source_id']
+        source_id_tail = tails_data[tails_data['cluster'] == current_cluster]['source_id']
+        idx_cg_memb = np.in1d(cannon_data['source_id'], np.array(source_id_cg))
+        idx_tail = np.in1d(cannon_data['source_id'], np.array(source_id_tail))
 
         if '.png' in sub_dir or 'individual-abund' in sub_dir:
             continue
@@ -205,7 +218,7 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
         x_cols_fig = 7
         y_cols_fig = 5
 
-        param_lims = {'teff': [3000, 7000]}  # , 'logg': [0.0, 5.5], 'fe_h': [-1.2, 0.5]}
+        param_lims = {'age': [0., 14.], 'teff': [3000, 7000], 'logg': [0.0, 5.5], 'fe_h': [-1.2, 0.5]}
         for param in list(param_lims.keys()):
             cannon_data['abund_det'] = 0
             print('Estimating membership using parameter', param)
@@ -222,6 +235,8 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
                 idx_u1 = np.logical_and(idx_out, idx_val)
                 idx_u2 = np.logical_and(idx_init, idx_val)
                 idx_u3 = np.logical_and(idx_in, idx_val)
+                idx_u4 = np.logical_and(idx_cg_memb, idx_val)
+                idx_u5 = np.logical_and(idx_tail, idx_val)
 
                 ax[y_p, x_p].scatter(cannon_data[param][idx_u1], cannon_data[col][idx_u1],
                                      lw=0, s=3, color='C2', label='Field')
@@ -229,6 +244,13 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
                                      lw=0, s=3, color='C0', label='Initial')
                 ax[y_p, x_p].scatter(cannon_data[param][idx_u3], cannon_data[col][idx_u3],
                                      lw=0, s=3, color='C1', label='Ejected')
+                if np.sum(idx_u5) > 0:
+                    print('Ejected in tail:', np.sum(np.logical_and(idx_u3, idx_u5)))
+                    ax[y_p, x_p].scatter(cannon_data[param][idx_u5], cannon_data[col][idx_u5],
+                                         lw=0, s=3, color='C4', label='Tail')
+
+                # print('Tails', len(source_id_tail), np.sum(idx_tail), np.sum(idx_u5), current_cluster)
+                # print(np.unique(tails_data['cluster']))
 
                 fit_model, col_std = fit_abund_trend(cannon_data[param][idx_u2], cannon_data[col][idx_u2], 
                                                      order=3, steps=2, sigma_low=2.5, sigma_high=2.5, n_min_perc=10.,func='poly')
@@ -261,7 +283,7 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
             # show abund_det stats
             u_det, n_det = np.unique(np.array(cannon_data['abund_det'][idx_in]), return_counts=True)
             for ud, nd in zip(u_det, n_det):
-            	print('   {:3d} stars detected {:2d} times'.format(nd, ud))
+                print('   {:3d} stars detected {:2d} times'.format(nd, ud))
             print('')
 
             rg = (-1.7, 0.5)
@@ -288,6 +310,22 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
 
             label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
             ax[y_p, x_p].set(ylim=rg, title='Fe/H' + label_add, xlim=param_lims[param])
+            ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
+
+            x_p = -2
+            y_p = -1
+
+            ax[y_p, x_p].scatter(cannon_data['age'][idx_u1], cannon_data[param][idx_u1],
+                                 lw=0, s=4, color='C2', label='Field')
+            ax[y_p, x_p].scatter(cannon_data['age'][idx_u2], cannon_data[param][idx_u2],
+                                 lw=0, s=4, color='C0', label='Initial')
+            ax[y_p, x_p].scatter(cannon_data['age'][idx_u3], cannon_data[param][idx_u3],
+                                 lw=0, s=4, color='C1', label='Ejected')
+            ax[y_p, x_p].scatter(cannon_data['age'][idx_u3_conf], cannon_data[param][idx_u3_conf],
+                                 lw=0, s=1, color='black', label='Confirmed')
+
+            label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
+            ax[y_p, x_p].set(ylim=param_lims[param], title='age' + label_add, xlim=[0., 14.])
             ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
 
             plt.subplots_adjust(top=0.97, bottom=0.02, left=0.04, right=0.98, hspace=0.3, wspace=0.3)

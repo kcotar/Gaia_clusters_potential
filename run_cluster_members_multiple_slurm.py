@@ -83,10 +83,10 @@ for i_cpu in range(n_cpu):
         continue
 
     if run_membership:
-        run_string = 'python -u tgas_clusters.py --r=0 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
+        run_string = 'python -u tgas_clusters.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'_{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_members_run_{:02.0f}'.format(i_cpu+1) + root_suffix
     else:
-        run_string = 'python -u gaia_clusters_sim_dr2.py --r=0 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
+        run_string = 'python -u gaia_clusters_sim_dr2.py --r=1 --c='+','.join(run_on)+' --s='+suffix+'{:02.0f}'.format(i_cpu+1)+' --d='+root_suffix
         run_log = 'cluster_orbits_run_{:02.0f}'.format(i_cpu + 1) + root_suffix
     print(run_string)
 
@@ -102,7 +102,7 @@ for i_cpu in range(n_cpu):
         txt_file.write('#SBATCH --tasks-per-node=4 \n')
     else:
         txt_file.write('#SBATCH --tasks-per-node=1 \n')
-    txt_file.write('#SBATCH --mem=15G \n')
+    txt_file.write('#SBATCH --mem=10G \n')
     txt_file.write('#SBATCH --time=20-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')

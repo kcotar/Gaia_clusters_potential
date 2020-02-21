@@ -1,8 +1,11 @@
 import numpy as np
-from astropy.table import Table, join
+import pandas as pd
+from astropy.table import Table, join, vstack
+from glob import glob
 
 root_dir = '/shared/ebla/cotar/'
 data_dir = root_dir + 'clusters/'
+tails_dir = data_dir + 'cluster_tails/'
 # data_dir_clusters = data_dir+'Gaia_open_clusters_analysis_October-GALAH-clusters/'
 #
 galah_gaia = Table.read(root_dir + 'GALAH_iDR3_main_191213.fits')
@@ -34,3 +37,22 @@ for txt_line in txt_lines_all:
 
 out_table = join(out_table, galah_gaia['source_id', 'sobject_id', 'ra', 'dec', 'd'], keys='sobject_id', join_type='left')
 out_table.write(data_dir + 'members_open_gaia_r2.fits', overwrite=True)
+
+# find and merge cluster tail membership data
+tails_data = []
+for fits_file in glob(tails_dir + '*.dat'):
+    cluster = fits_file.split('/')[-1].split('.')[0]
+    cluster_stars = Table.from_pandas(pd.read_csv(fits_file, delim_whitespace=True))
+
+    if len(cluster_stars) <= 0:
+        continue
+
+    # class_col = 'class'
+    # if class_col in cluster_stars.colnames:
+    #     # select only tail members for Blanco1 if even needed - needs some test
+    #     cluster_stars = cluster_stars[cluster_stars[class_col] == 't']
+
+    cluster_stars['cluster'] = cluster
+    print(cluster_stars['source_id', 'cluster'])
+    tails_data.append(cluster_stars['source_id', 'cluster'])
+vstack(tails_data).write(tails_dir + 'members_open_gaia_tails.fits', overwrite=True)

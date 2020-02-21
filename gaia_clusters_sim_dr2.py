@@ -55,10 +55,11 @@ if len(argv) > 1:
         if o == '--dir':
             root_dir_suffix = str(a)
 
-csv_out_cols_init = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag']
-csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'pmra', 'pmdec', 'phot_g_mean_mag', 'ang_dist', '3d_dist', 'time_in_cluster', 'in_cluster_prob']
-
-
+csv_out_cols_init = ['source_id', 'ra', 'dec', 'rv', 'rv_error', 'pmra', 'pmdec', 'pmra_error', 'pmdec_error',
+                     'parallax', 'parallax_error', 'phot_g_mean_mag']
+csv_out_cols = ['source_id', 'ra', 'dec', 'rv', 'rv_error', 'pmra', 'pmdec', 'pmra_error', 'pmdec_error',
+                'parallax', 'parallax_error', 'phot_g_mean_mag',
+                'ang_dist', '3d_dist', 'time_in_cluster', 'in_cluster_prob']
 
 # ------------------------------------------
 # ----------------  SETTINGS  --------------
@@ -196,6 +197,9 @@ if SIMULATE_ORBITS:
 
             gaia_data = gaia_data[np.abs(gaia_data['rv']) > 0.]
             print('Gaia with RV:', len(gaia_data))
+
+            # save used data
+            gaia_data.write(uotput_file.split('.')[0] + '_combined_used.fits')
 
             idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
             print('Gaia in cluster with RV:', np.sum(idx_members))
