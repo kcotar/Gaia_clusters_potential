@@ -95,8 +95,8 @@ for i_cpu in range(n_cpu):
     txt_file.write('#\n')
     txt_file.write('#SBATCH --partition=astro \n')
     txt_file.write('#SBATCH --qos=astro \n')
-    # txt_file.write('#SBATCH --partition=suspend \n')
-    # txt_file.write('#SBATCH --qos=suspend \n')
+    # txt_file.write('#SBATCH --partition=rude \n')
+    # txt_file.write('#SBATCH --qos=rude \n')
     txt_file.write('#SBATCH --nodes=1 \n')
     if run_membership:
         txt_file.write('#SBATCH --tasks-per-node=4 \n')
@@ -104,6 +104,7 @@ for i_cpu in range(n_cpu):
         txt_file.write('#SBATCH --tasks-per-node=1 \n')
     txt_file.write('#SBATCH --mem=10G \n')
     txt_file.write('#SBATCH --time=20-00:00 \n')
+    # txt_file.write('#SBATCH --time=1-00:00 \n')
     txt_file.write('#SBATCH -o logs/'+run_log+'.out \n')
     txt_file.write('#SBATCH -e logs/'+run_log+'.err \n')
     # txt_file.write('#SBATCH --nodelist=astro01 \n')

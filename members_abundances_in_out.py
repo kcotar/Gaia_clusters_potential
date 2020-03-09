@@ -100,12 +100,13 @@ def eval_abund_trend(p_data, m_data, func='poly'):
 
 
 simulation_dir = '/shared/data-camelot/cotar/'
-data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_2001/'
+data_dir_clusters = simulation_dir+'GaiaDR2_open_clusters_2001_GALAH/'
 
 data_dir = '/shared/ebla/cotar/'
 USE_DR3 = True
 Q_FLAGS = True
 P_INDIVIDUAL = False
+DO_NOT_TAG_ABUND = ['V', 'Rb', 'Sr', 'Y', 'Zr', 'Mo', 'Ru', 'La', 'Sm']
 suffix = ''
 
 if len(argv) > 1:
@@ -179,10 +180,13 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
             idx_init = np.full(len(cannon_data), False)
 
         try:
+            g_in_all = Table.read('possible_ejected-step1.csv', format='ascii', delimiter='\t')
             g_in = Table.read('possible_ejected-step1_galah.csv', format='ascii', delimiter='\t')
             # further refinement of results to be plotted here
-            g_in = g_in[np.logical_and(g_in['time_in_cluster'] >= 1.,  # [Myr] longest time (of all incarnations) inside cluster
-                                       g_in['in_cluster_prob'] >= 68.)]  # percentage of reincarnations inside cluster
+            g_in_all = g_in_all[np.logical_and(g_in_all['time_in_cluster'] >= 1.,  # [Myr] longest time (of all incarnations) inside cluster
+                                               g_in_all['in_cluster_prob'] >= 68.)]  # percentage of reincarnations inside cluster
+            g_in = g_in[np.logical_and(g_in['time_in_cluster'] >= 1.,
+                                       g_in['in_cluster_prob'] >= 68.)]
             idx_in = np.in1d(cannon_data['source_id'], g_in['source_id'])
             idx_in_no_CG = np.logical_and(idx_in,
                                           np.logical_not(np.in1d(cannon_data['source_id'], CG_data['source_id'])))
@@ -219,12 +223,13 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
         y_cols_fig = 5
 
         param_lims = {'age': [0., 14.], 'teff': [3000, 7000], 'logg': [0.0, 5.5], 'fe_h': [-1.2, 0.5]}
-        for param in list(param_lims.keys()):
+        for param in ['teff']:#list(param_lims.keys()):
             cannon_data['abund_det'] = 0
+            cannon_data['abund_det_elems'] = 0
             print('Estimating membership using parameter', param)
             fig, ax = plt.subplots(y_cols_fig, x_cols_fig, figsize=(15, 10))
             for i_c, col in enumerate(abund_cols):
-                print(col)
+                # print(col)
                 x_p = i_c % x_cols_fig
                 y_p = int(1. * i_c / x_cols_fig)
 
@@ -268,23 +273,22 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
                     a_eject_fit = eval_abund_trend(cannon_data[param], fit_model, func='poly')
                     idx_is_ejected = np.logical_and(idx_u3,
                                                     np.abs(cannon_data[col] - a_eject_fit) <= col_std)
+                    idx_field_tagged = np.logical_and(idx_u1,
+                                                      np.abs(cannon_data[col] - a_eject_fit) <= col_std)
                     # print(np.sum(idx_u3),np.sum(idx_is_ejected))
-                    # add detection flags
-                    cannon_data['abund_det'][idx_is_ejected] += 1
+                    # add detection flags if we requested use of this abundance
+                    if col.split('_')[0] not in DO_NOT_TAG_ABUND:
+                        cannon_data['abund_det'][idx_is_ejected] += 1
+                        cannon_data['abund_det'][idx_field_tagged] += 1
+                        cannon_data['abund_det_elems'][idx_in] += 1
+                        cannon_data['abund_det_elems'][idx_out] += 1
 
                 label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
                 ax[y_p, x_p].set(xlim=param_lims[param], title=col.split('_')[0] + label_add,
                                  ylim=rg, yticks=[-1., -0.5, 0, 0.5, 1.], yticklabels=['-1.', '', '0', '', '1.'])
                 ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
-                if i_c == 0:
-                    ax[y_p, x_p].legend()
-
-            # print(cannon_data['abund_det'][idx_in])
-            # show abund_det stats
-            u_det, n_det = np.unique(np.array(cannon_data['abund_det'][idx_in]), return_counts=True)
-            for ud, nd in zip(u_det, n_det):
-                print('   {:3d} stars detected {:2d} times'.format(nd, ud))
-            print('')
+                # if i_c == 0:
+                #     ax[y_p, x_p].legend()
 
             rg = (-1.7, 0.5)
             idx_val = np.isfinite(cannon_data[teff_col])
@@ -294,35 +298,105 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
             x_p = -1
             y_p = -1
 
+            # print(fe_col)
             idx_u1 = np.logical_and(idx_out, idx_val)
             idx_u2 = np.logical_and(idx_init, idx_val)
             idx_u3 = np.logical_and(idx_in, idx_val)
-            idx_u3_conf = np.logical_and(idx_u3, cannon_data['abund_det'] >= 10)
+            idx_u5 = np.logical_and(idx_tail, idx_val)
 
-            ax[y_p, x_p].scatter(cannon_data[param][idx_u1], cannon_data[fe_col][idx_u1],
-                                 lw=0, s=4, color='C2', label='Field')
-            ax[y_p, x_p].scatter(cannon_data[param][idx_u2], cannon_data[fe_col][idx_u2],
-                                 lw=0, s=4, color='C0', label='Initial')
-            ax[y_p, x_p].scatter(cannon_data[param][idx_u3], cannon_data[fe_col][idx_u3],
-                                 lw=0, s=4, color='C1', label='Ejected')
-            ax[y_p, x_p].scatter(cannon_data[param][idx_u3_conf], cannon_data[fe_col][idx_u3_conf],
+            sl1 = ax[y_p, x_p].scatter(cannon_data[param][idx_u1], cannon_data[fe_col][idx_u1],
+                                 lw=0, s=3, color='C2', label='Field')
+            sl2 = ax[y_p, x_p].scatter(cannon_data[param][idx_u2], cannon_data[fe_col][idx_u2],
+                                 lw=0, s=3, color='C0', label='Initial')
+            sl3 = ax[y_p, x_p].scatter(cannon_data[param][idx_u3], cannon_data[fe_col][idx_u3],
+                                 lw=0, s=3, color='C1', label='Ejected')
+
+            fit_model, col_std = fit_abund_trend(cannon_data[param][idx_u2], cannon_data[fe_col][idx_u2],
+                                                 order=3, steps=2, sigma_low=2.5, sigma_high=2.5, n_min_perc=10.,
+                                                 func='poly')
+            if fit_model is not None:
+                x_fit = np.linspace(param_lims[param][0], param_lims[param][1], 250)
+                y_fit = eval_abund_trend(x_fit, fit_model, func='poly')
+
+                ax[y_p, x_p].plot(x_fit, y_fit, lw=0.5, color='C0', label='', alpha=0.8)
+                ax[y_p, x_p].plot(x_fit, y_fit + 1. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.75)
+                ax[y_p, x_p].plot(x_fit, y_fit - 1. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.75)
+                ax[y_p, x_p].plot(x_fit, y_fit + 2. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.5)
+                ax[y_p, x_p].plot(x_fit, y_fit - 2. * col_std, ls='--', lw=0.5, color='C0', label='', alpha=0.5)
+
+                # count abundance detections for possible ejected members
+                a_eject_fit = eval_abund_trend(cannon_data[param], fit_model, func='poly')
+                idx_is_ejected = np.logical_and(idx_u3,
+                                                np.abs(cannon_data[fe_col] - a_eject_fit) <= col_std)
+                idx_field_tagged = np.logical_and(idx_u1,
+                                                  np.abs(cannon_data[fe_col] - a_eject_fit) <= col_std)
+                cannon_data['abund_det'][idx_is_ejected] += 1
+                cannon_data['abund_det'][idx_field_tagged] += 1
+                cannon_data['abund_det_elems'][idx_in] += 1
+                cannon_data['abund_det_elems'][idx_out] += 1
+
+            # compute probability of being chemically similar to observed open cluster
+            cannon_data['abund_det_prob'] = cannon_data['abund_det'] / cannon_data['abund_det_elems'] * 100
+            # output chemical tagging probability
+            print(cannon_data['abund_det', 'abund_det_elems', 'abund_det_prob'][idx_in])
+            u_det, n_det = np.unique(np.array(cannon_data['abund_det_prob'][idx_in]),
+                                     return_counts=True)
+            if len(u_det) > 0:
+                for ud, nd in zip(u_det, n_det):
+                    print(' {:5d} ejected stars detected with {:5.1f}% confidence'.format(nd, ud))
+                print('')
+                n_abund_det = np.sum(cannon_data['abund_det_prob'][idx_in] > 68.)
+                n_abund_valid = np.sum(idx_u3)
+                print('Detection stats ejected {:3.0f}, {:3.0f}, {:5.1f}%'.format(n_abund_valid, n_abund_det,
+                                                                                  n_abund_det / n_abund_valid * 100))
+                print('')
+
+            u_det, n_det = np.unique(np.array(cannon_data['abund_det_prob'][idx_out]),
+                                     return_counts=True)
+            if len(u_det) > 0:
+                for ud, nd in zip(u_det, n_det):
+                    print(' {:5d} field stars detected with {:5.1f}% confidence'.format(nd, ud))
+                print(' ')
+                n_abund_det = np.sum(cannon_data['abund_det_prob'][idx_out] > 68.)
+                n_abund_valid = np.sum(idx_u1)
+                print('Detection stats field {:3.0f}, {:3.0f}, {:5.1f}%'.format(n_abund_valid, n_abund_det,
+                                                                                n_abund_det / n_abund_valid * 100))
+                print('')
+
+            print('\n\n\n\n')
+
+            # TODO: CONF PROPERLY
+            idx_conf = cannon_data['abund_det_prob'] >= 68.
+            sl4 = ax[y_p, x_p].scatter(cannon_data[param][idx_conf], cannon_data[fe_col][idx_conf],
                                  lw=0, s=1, color='black', label='Confirmed')
+
+            if np.sum(idx_u5) > 0:
+                sl5 = ax[y_p, x_p].scatter(cannon_data[param][idx_u5], cannon_data[fe_col][idx_u5],
+                                     lw=0, s=3, color='C4', label='Tail')
+                ax[-1, -3].legend(handles=[sl1, sl1, sl3, sl5, sl4])
+            else:
+                ax[-1, -3].legend(handles=[sl1, sl1, sl3, sl4])
 
             label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
             ax[y_p, x_p].set(ylim=rg, title='Fe/H' + label_add, xlim=param_lims[param])
             ax[y_p, x_p].grid(ls='--', alpha=0.2, color='black')
 
+
             x_p = -2
             y_p = -1
 
             ax[y_p, x_p].scatter(cannon_data['age'][idx_u1], cannon_data[param][idx_u1],
-                                 lw=0, s=4, color='C2', label='Field')
+                                 lw=0, s=3, color='C2', label='Field')
             ax[y_p, x_p].scatter(cannon_data['age'][idx_u2], cannon_data[param][idx_u2],
-                                 lw=0, s=4, color='C0', label='Initial')
+                                 lw=0, s=3, color='C0', label='Initial')
             ax[y_p, x_p].scatter(cannon_data['age'][idx_u3], cannon_data[param][idx_u3],
-                                 lw=0, s=4, color='C1', label='Ejected')
-            ax[y_p, x_p].scatter(cannon_data['age'][idx_u3_conf], cannon_data[param][idx_u3_conf],
+                                 lw=0, s=3, color='C1', label='Ejected')
+            ax[y_p, x_p].scatter(cannon_data['age'][idx_conf], cannon_data[param][idx_conf],
                                  lw=0, s=1, color='black', label='Confirmed')
+
+            if np.sum(idx_u5) > 0:
+                ax[y_p, x_p].scatter(cannon_data['age'][idx_u5], cannon_data[param][idx_u5],
+                                     lw=0, s=3, color='C4', label='Tail')
 
             label_add = ' = {:.0f}, {:.0f}, {:.0f}'.format(np.sum(idx_u1), np.sum(idx_u2), np.sum(idx_u3))
             ax[y_p, x_p].set(ylim=param_lims[param], title='age' + label_add, xlim=[0., 14.])
@@ -333,7 +407,8 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
             plt.savefig('p_' + param + '_abundances_' + sub_dir + '' + suffix + '.png', dpi=250)
             plt.close(fig)
 
-
+    chdir('..')
+"""
         # ------------------------------------------------------------------------------
         # NEW: plot with PDF
         # ------------------------------------------------------------------------------
@@ -547,5 +622,5 @@ for cluster_dir in glob('Cluster_orbits_GaiaDR2_*'):
 
     # go to the directory with all simulations
     chdir('..')
-
+"""
 

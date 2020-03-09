@@ -125,6 +125,8 @@ if SIMULATE_ORBITS:
         idx_cluster_pos = np.where(cluster_members['cluster'] == obs_cluster)[0]
         print(' Members found in previous step:',  len(idx_cluster_pos))
         if len(idx_cluster_pos) == 0:
+            print('')
+            print('')
             continue
         clust_data = cluster_members[idx_cluster_pos]
 
@@ -199,11 +201,11 @@ if SIMULATE_ORBITS:
             print('Gaia with RV:', len(gaia_data))
 
             # save used data
-            gaia_data.write(uotput_file.split('.')[0] + '_combined_used.fits')
+            gaia_data.write(uotput_file.split('.')[0] + '_combined_used.fits', overwrite=True)
 
             idx_members = np.in1d(gaia_data['source_id'], clust_data['source_id'])
             print('Gaia in cluster with RV:', np.sum(idx_members))
-            print('GALAH in cluster with RV:', np.sum(np.in1d(galah_data['source_id'], clust_data['source_id'])))
+            print('GALAH in cluster with RV:', np.sum(np.in1d(galah_data['source_id'], gaia_data[idx_members]['source_id'])))
 
             if np.sum(idx_members) < 5:  # at least 3 points are needed for the construction of cluster volume in the xyz coordinate space
                 print('FINISHED: not enough stars in the cluster to reconstruct its 3D shape and trace orbits.')
@@ -239,6 +241,8 @@ if SIMULATE_ORBITS:
                 os.chdir('..')
                 continue
 
+            print('Gaia in cluster with RV - after RV cuts:',len(gaia_data_members))
+
             print('Step 1 integration')
             output_list_objects(gaia_data_members, clust_center, csv_out_cols_init, 'members_init.csv')
             # TODO: age and meh for those clusters
@@ -273,6 +277,23 @@ if SIMULATE_ORBITS:
                 print('  WARNING: Not enough test stars in vicinity to perform any orbit integration simulation.')
                 os.chdir('..')
                 continue
+
+            ffff = 'possible_ejected-step1.csv'
+            if os.path.isfile(ffff):
+                dddd = Table.read('possible_outside-step1.csv', format='ascii', delimiter='\t')
+                gggg = Table.read('possible_ejected-step1.csv', format='ascii', delimiter='\t')
+                gggg = gggg[np.logical_and(gggg['time_in_cluster'] >= 1.,
+                                           gggg['in_cluster_prob'] >= 68.)]
+                print('Number of all final field:', len(dddd))
+                print('Number of all final ejected:', len(gggg))
+                print('Number of all final field with GALAH spectra:', np.sum(np.in1d(galah_data['source_id'], dddd['source_id'])))
+                print('Number of all final ejected with GALAH spectra:', np.sum(np.in1d(galah_data['source_id'], gggg['source_id'])))
+                print('Number of all final members with GALAH spectra:', np.sum(np.in1d(galah_data['source_id'], gaia_data_members['source_id'])))
+
+            os.chdir('..')
+            print('')
+            print('')
+            continue
 
             cluster_class.init_test_particle(gaia_test_stars_data[idx_test])
             if USE_GALPY:
